@@ -1432,6 +1432,8 @@ bool LuauVisitor::visit(LSLBinaryExpression* bin_expr)
     LuauOpcode luau_op = LOP_NOP;
     switch (op)
     {
+        // TODO: May be opportunities for SUBK, SUBRK, etc depending on how low of
+        //  a constant value we're able to get.
         case '+': luau_op = LOP_ADD; break;
         case '-': luau_op = LOP_SUB; break;
         case '*': luau_op = LOP_MUL; break;
