@@ -170,7 +170,6 @@ typedef struct global_State
 
     lua_Alloc frealloc;   // function to reallocate memory
     void* ud;            // auxiliary data to `frealloc'
-    lua_State* constsstate;
     // ServerLua: This keeps tracks of user allocs that aren't currently
     //   rooted, but will be soon if the function succeeds. Only relevant
     //   when code makes multiple allocs in a row in a user memcat without

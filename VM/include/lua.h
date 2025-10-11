@@ -391,8 +391,6 @@ LUA_API void lua_gcvalidate(lua_State *L);
 LUA_API void lua_fixvalue(lua_State* L, int idx);
 // Whether the object is fixed or not a collectable type
 LUA_API bool lua_iscollectable(lua_State *L, int idx);
-// Use another state as a source for constants
-LUA_API void lua_useconstsstate(lua_State* L, lua_State * constsL);
 // Get how much "real" memory is used by pages.
 LUA_API int lua_totalmemoverhead(lua_State *L);
 // Gets the total size of all user-allocated objects reachable from a user thread.

@@ -118,18 +118,14 @@ class ReplStates
 public:
     ReplStates() {
         L = luaL_newstate();
-        constsL = nullptr;
     }
 
     ~ReplStates()
     {
         lua_close(L);
-        if (constsL)
-            lua_close(constsL);
     }
 
     lua_State *L;
-    lua_State *constsL;
 };
 
 static int lua_loadstring(lua_State* L)

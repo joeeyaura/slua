@@ -656,42 +656,6 @@ void luaC_dump(lua_State* L, void* file, const char* (*categoryName)(lua_State* 
 
     fprintf(f, "{\"objects\":{\n");
 
-    // ServerLua: We make this use luaC_enumheap so we can synthesize objects that are not owned by our GC,
-    // but are still referenced by our GC. We need to know about edges for that.
-    if (g->constsstate)
-    {
-        DumpContext ctx;
-        ctx.file = f;
-
-        luaC_enumheap(
-            L,
-            &ctx,
-            [](void* ctx, void* gco, uint8_t tt, uint8_t memcat, size_t size, const char* name)
-            {
-                DumpContext& context = *(DumpContext*)ctx;
-                context.nodes.insert(gco);
-                dumpgco(context.file, nullptr, (GCObject*)gco, true);
-            },
-            [](void* ctx, void* src, void* dst, const char* edge_name)
-            {
-                DumpContext& context = *(DumpContext*)ctx;
-                context.references.insert(src);
-                context.references.insert(dst);
-            }
-        );
-
-        for (auto edge_ptr : ctx.references)
-        {
-            if (edge_ptr == nullptr)
-                continue;
-            if (ctx.nodes.find(edge_ptr) != ctx.nodes.cend())
-                continue;
-            ctx.nodes.insert(edge_ptr);
-            // Don't include the size, this is an object we're referencing from a foreign GC.
-            dumpgco(file, nullptr, (GCObject*)edge_ptr, false);
-        }
-    }
-
     fprintf(f, "\"0\":{\"type\":\"userdata\",\"cat\":0,\"size\":0}\n"); // to avoid issues with trailing ,
     fprintf(f, "},\"roots\":{\n");
     fprintf(f, "\"mainthread\":");

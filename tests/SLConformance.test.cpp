@@ -56,10 +56,7 @@ static void lua_test_state_closer(lua_State *L) {
     if (L->userdata)
         delete (RuntimeState *)L->userdata;
     L->userdata = nullptr;
-    auto *GL = L->global->constsstate;
     lua_close(L);
-    if (GL)
-        lua_test_state_closer(GL);
 }
 
 static int lua_silence(lua_State* L)

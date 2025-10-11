@@ -183,8 +183,6 @@ lua_State* lua_newstate(lua_Alloc f, void* ud)
     preinit_state(L, g);
     g->frealloc = f;
     g->ud = ud;
-    // ServerLua: keep track of the state we keep constants in
-    g->constsstate = NULL;
     // ServerLua: For user alloc tracking
     g->unrooteduserallocs = 0;
     g->mainthread = L;
