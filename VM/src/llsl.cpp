@@ -7,6 +7,7 @@
 
 #include <cstring>
 #include <cassert>
+#include <cmath>
 #include <unordered_set>
 
 #include "llsl.h"
@@ -23,6 +24,16 @@
 // There, we rely on CMake to get this right.
 #ifndef __GNUC__
 #   pragma STDC FP_CONTRACT OFF
+#endif
+
+#if defined(_MSC_VER) && _MSC_VER >= 1200 && _MSC_VER < 1800
+#   include <float.h>
+#   define isfinite _finite
+#elif defined(__sun) && defined(__SVR4) //Solaris
+#   include <ieeefp.h>
+#   define isfinite finite
+#else
+#   define isfinite std::isfinite
 #endif
 
 
@@ -195,15 +206,17 @@ static int _lsl_cast_internal(lua_State* L, bool in_list, bool neg_zero, bool ni
             switch(to_lsl_type)
             {
                 case LSLIType::LST_INTEGER:
+                {
                     // If this seems weird, that's because it is. Mono truncates to 32-bit float
                     // before converting to integer. You'll note that we cast to int64_t first before
                     // truncating to int32_t, which also seems odd. We need that to emulate x86-64
                     // integer wraparound on AArch64, or `print(((integer)((float)0x7FffFFfe)))`
                     // will print 2147483647 rather than -2147483648. See
                     // https://stackoverflow.com/questions/66279679/casting-float-to-int-with-wrap-around-on-aarch64-arm64
-                    if (std::isfinite(nvalue(val)))
+                    float nval = (float)nvalue(val);
+                    if (isfinite(nval))
                     {
-                        setintvalue(&new_tv, (int32_t)((int64_t)((float)nvalue(val))));
+                        setintvalue(&new_tv, (int32_t)((int64_t)(nval)));
                     }
                     else
                     {
@@ -211,6 +224,7 @@ static int _lsl_cast_internal(lua_State* L, bool in_list, bool neg_zero, bool ni
                         setintvalue(&new_tv, INT32_MIN);
                     }
                     break;
+                }
                 case LSLIType::LST_STRING:
                 {
                     // Again, truncates to float first.

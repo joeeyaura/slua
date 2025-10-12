@@ -24,6 +24,16 @@
 #endif
 #endif
 
+#if defined(_MSC_VER) && _MSC_VER >= 1200 && _MSC_VER < 1800
+#   include <float.h>
+#   define isfinite _finite
+#elif defined(__sun) && defined(__SVR4) //Solaris
+#   include <ieeefp.h>
+#   define isfinite finite
+#else
+#   define isfinite std::isfinite
+#endif
+
 // When working with VM code, pay attention to these rules for correctness:
 // 1. Many external Lua functions can fail; for them to fail and be able to generate a proper stack, we need to copy pc to L->ci->savedpc before the
 // call
@@ -365,9 +375,10 @@ reentry:
                 {
                     // float -> int (matches lsl_cast() and avoids AArch64 weirdness)
                     LUAU_ASSERT(ttisnumber(rb));
-                    if (std::isfinite(nvalue(rb)))
+                    float nval = (float)nvalue(rb);
+                    if (isfinite(nval))
                     {
-                        setintvalue(ra, (int32_t)((int64_t)((float)nvalue(rb))));
+                        setintvalue(ra, (int32_t)((int64_t)(nval)));
                     }
                     else
                     {
