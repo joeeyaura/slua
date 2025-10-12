@@ -228,10 +228,17 @@ TEST_CASE("Cast")
 {
     auto state = runConformance("cast.lsl", [](lua_State *L)
     {
-        CHECK_EQ(luaL_checkstring(L, 1), std::string("5.000000hello!"));
+        std::string str_val = luaL_checkstring(L, 1);
+        switch(YIELD_NUM(L))
+        {
+        case 0: CHECK_EQ(str_val, std::string("5.000000hello!")); break;
+        case 1: CHECK_EQ(str_val, std::string("-2147483648")); break;
+        case 2: CHECK_EQ(str_val, std::string("-2147483648")); break;
+        case 3: CHECK_EQ(str_val, std::string("-2147483648")); break;
+        }
         return -1;
     });
-    CHECK_EQ(YIELD_NUM(state.get()), 1);
+    CHECK_EQ(YIELD_NUM(state.get()), 4);
 }
 
 TEST_CASE("PostPreIncrDecr")

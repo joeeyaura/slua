@@ -365,7 +365,15 @@ reentry:
                 {
                     // float -> int (matches lsl_cast() and avoids AArch64 weirdness)
                     LUAU_ASSERT(ttisnumber(rb));
-                    setintvalue(ra, (int32_t)((int64_t)((float)nvalue(rb))));
+                    if (std::isfinite(nvalue(rb)))
+                    {
+                        setintvalue(ra, (int32_t)((int64_t)((float)nvalue(rb))));
+                    }
+                    else
+                    {
+                        // Matches Mono behavior for non-finite values.
+                        setintvalue(ra, INT32_MIN);
+                    }
                 }
                 VM_NEXT();
             }

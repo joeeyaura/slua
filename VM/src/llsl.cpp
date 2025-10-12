@@ -201,7 +201,16 @@ static int _lsl_cast_internal(lua_State* L, bool in_list, bool neg_zero, bool ni
                     // integer wraparound on AArch64, or `print(((integer)((float)0x7FffFFfe)))`
                     // will print 2147483647 rather than -2147483648. See
                     // https://stackoverflow.com/questions/66279679/casting-float-to-int-with-wrap-around-on-aarch64-arm64
-                    setintvalue(&new_tv, (int32_t)((int64_t)((float)nvalue(val)))); break;
+                    if (std::isfinite(nvalue(val)))
+                    {
+                        setintvalue(&new_tv, (int32_t)((int64_t)((float)nvalue(val))));
+                    }
+                    else
+                    {
+                        // Mono treats non-finite values as INT32_MIN.
+                        setintvalue(&new_tv, INT32_MIN);
+                    }
+                    break;
                 case LSLIType::LST_STRING:
                 {
                     // Again, truncates to float first.
