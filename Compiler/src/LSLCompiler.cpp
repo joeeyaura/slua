@@ -602,7 +602,7 @@ bool LuauVisitor::visit(LSLIfStatement *if_stmt)
     uint8_t expr_reg;
     {
         [[maybe_unused]] RegScope expr_scope(this);
-        expr_reg = handlePositionIndependentExpr(if_stmt->getCheckExpr());
+        expr_reg = evalExprToSourceReg(if_stmt->getCheckExpr());
     }
 
     auto *false_node = if_stmt->getFalseBranch();
@@ -642,7 +642,7 @@ bool LuauVisitor::visit(LSLForStatement *for_stmt)
     uint8_t expr_reg;
     {
         [[maybe_unused]] RegScope expr_scope(this);
-        expr_reg = handlePositionIndependentExpr(for_stmt->getCheckExpr());
+        expr_reg = evalExprToSourceReg(for_stmt->getCheckExpr());
     }
     auto jump_to_end = mBuilder->emitLabel();
     mBuilder->emitAD(LOP_JUMPIFNOT, expr_reg, 0);
@@ -671,7 +671,7 @@ bool LuauVisitor::visit(LSLWhileStatement * while_stmt)
     uint8_t expr_reg;
     {
         [[maybe_unused]] RegScope expr_scope(this);
-        expr_reg = handlePositionIndependentExpr(while_stmt->getCheckExpr());
+        expr_reg = evalExprToSourceReg(while_stmt->getCheckExpr());
     }
     auto jump_to_end = mBuilder->emitLabel();
     mBuilder->emitAD(LOP_JUMPIFNOT, expr_reg, 0);
@@ -695,7 +695,7 @@ bool LuauVisitor::visit(LSLDoStatement * do_stmt)
     uint8_t expr_reg;
     {
         [[maybe_unused]] RegScope expr_scope(this);
-        expr_reg = handlePositionIndependentExpr(do_stmt->getCheckExpr());
+        expr_reg = evalExprToSourceReg(do_stmt->getCheckExpr());
     }
     // run the check expression, exiting the loop if it fails
     auto jump_to_start = mBuilder->emitLabel();
@@ -731,7 +731,7 @@ bool LuauVisitor::visit(LSLReturnStatement *ret_stmt)
     auto *expr = ret_stmt->getExpr();
     if (expr)
     {
-        source_reg = handlePositionIndependentExpr(expr);
+        source_reg = evalExprToSourceReg(expr);
         if (needTruncateToFloat(expr))
         {
             // It's not a big deal if we clobber `source_reg`, we're not going to use it again.
@@ -852,7 +852,7 @@ bool LuauVisitor::visit(LSLBoolConversionExpression *bool_expr)
         case LST_LIST:
         {
             // Any non-zero result is fine.
-            auto res_idx = handlePositionIndependentExpr(child_expr);
+            auto res_idx = evalExprToSourceReg(child_expr);
             mBuilder->emitABC(LOP_LENGTH, target_reg, res_idx, 0);
             return false;
         }
@@ -860,7 +860,7 @@ bool LuauVisitor::visit(LSLBoolConversionExpression *bool_expr)
             break;
     }
 
-    auto res_idx = handlePositionIndependentExpr(child_expr);
+    auto res_idx = evalExprToSourceReg(child_expr);
     auto const_reg = allocReg(bool_expr);
     {
         TargetRegScope target(this, const_reg);
@@ -896,7 +896,7 @@ bool LuauVisitor::visit(LSLTypecastExpression *typecast_expr)
         (from_type == LST_FLOATINGPOINT && to_type == LST_INTEGER))
     {
         const auto dest_reg = takeTargetReg(typecast_expr);
-        const auto source_reg = handlePositionIndependentExpr(child_expr);
+        const auto source_reg = evalExprToSourceReg(child_expr);
         int direction = (from_type == LST_INTEGER) ? 0 : 1;  // 0 = int->float, 1 = float->int
         mBuilder->emitABC(LOP_LSL_CASTINTFLOAT, dest_reg, source_reg, direction);
         return false;
@@ -1000,7 +1000,7 @@ bool LuauVisitor::visit(LSLUnaryExpression *un_expr)
     const auto expected_target = mTargetReg;
     // This deserves some explanation. Basically, for expressions where we want
     // the result to end up in a specific register, we can put things directly
-    // into that target register. `getTargetReg()` may internally alloc if there
+    // into that target register. `takeTargetReg()` may internally alloc if there
     // was no target register.
     //
     // For that reason, we keep track of both the register we actually used (target_reg)
@@ -1026,7 +1026,7 @@ bool LuauVisitor::visit(LSLUnaryExpression *un_expr)
 
     if (luau_op != LOP_NOP)
     {
-        mBuilder->emitABC(luau_op, target_reg, handlePositionIndependentExpr(expr), 0);
+        mBuilder->emitABC(luau_op, target_reg, evalExprToSourceReg(expr), 0);
         // maybeMove(expected_target, target_reg);
         return false;
     }
@@ -1079,7 +1079,7 @@ bool LuauVisitor::visit(LSLUnaryExpression *un_expr)
     // Pre-allocated by buildFunction() to ensure index < 256 for LOP_ADDK/SUBK
     const auto one_const_idx = addConstantUnder(lvalue->getType()->getOneValue(), UINT8_MAX);
 
-    auto source_reg = handlePositionIndependentExpr(expr);
+    auto source_reg = evalExprToSourceReg(expr);
 
     // Because we have ruled out the self-assign post-op case, we don't need a temporary
     // here. We can just assign directly to the target register and the lvalue register.
@@ -1191,7 +1191,7 @@ bool LuauVisitor::visit(LSLBinaryExpression* bin_expr)
             // assignment expression.
             // This should be cast to float in _all_ cases since it results in an `ldfld`
             // under LSL-on-Mono.
-            source_reg = handlePositionIndependentExpr(rhs);
+            source_reg = evalExprToSourceReg(rhs);
             if (needTruncateToFloat(rhs))
             {
                 have_truncated_float = true;
@@ -1222,7 +1222,7 @@ bool LuauVisitor::visit(LSLBinaryExpression* bin_expr)
         {
             if (lval_sym->getSubType() == SYM_GLOBAL)
             {
-                source_reg = handlePositionIndependentExpr(rhs);
+                source_reg = evalExprToSourceReg(rhs);
                 if (needTruncateToFloat(rhs))
                 {
                     // Crap, we need to cast to 32-bit in order to match Mono behavior.
@@ -1274,7 +1274,7 @@ bool LuauVisitor::visit(LSLBinaryExpression* bin_expr)
         auto* lval = (LSLLValueExpression*)lhs;
         auto* lval_sym = lval->getSymbol();
 
-        uint8_t rhs_reg = handlePositionIndependentExpr(rhs);
+        uint8_t rhs_reg = evalExprToSourceReg(rhs);
         uint8_t source_reg;
         if (lval_sym->getSubType() == SYM_GLOBAL)
         {
@@ -1394,13 +1394,13 @@ bool LuauVisitor::visit(LSLBinaryExpression* bin_expr)
             // This case is basically just the same as the object length operator.
             // `lhs_val != []` is a common idiom in LSL for getting the length of a list,
             // so let's special-case it rather than wasting a list temporary.
-            const auto lhs_reg = handlePositionIndependentExpr(lhs);
+            const auto lhs_reg = evalExprToSourceReg(lhs);
             mBuilder->emitABC(LOP_LENGTH, target_reg, lhs_reg, 0);
             return false;
         }
 
         // Visit RHS first because LSL is awful
-        auto rhs_reg = handlePositionIndependentExpr(rhs);
+        auto rhs_reg = evalExprToSourceReg(rhs);
         if (need_rhs_copy)
         {
             uint8_t new_rhs_reg = allocReg(rhs);
@@ -1408,7 +1408,7 @@ bool LuauVisitor::visit(LSLBinaryExpression* bin_expr)
             rhs_reg = new_rhs_reg;
         }
 
-        const auto lhs_reg = handlePositionIndependentExpr(lhs);
+        const auto lhs_reg = evalExprToSourceReg(lhs);
 
         // It can basically only be comparison operators in here.
         // Remember, not eq basically subtracts the length of rhs from lhs.
@@ -1486,7 +1486,7 @@ bool LuauVisitor::visit(LSLBinaryExpression* bin_expr)
 
                 if (k_op != LOP_NOP)
                 {
-                    const auto lhs_reg = handlePositionIndependentExpr(lhs);
+                    const auto lhs_reg = evalExprToSourceReg(lhs);
                     mBuilder->emitABC(k_op, target_reg, lhs_reg, (uint8_t)rhs_const_idx);
                     return false;
                 }
@@ -1495,7 +1495,7 @@ bool LuauVisitor::visit(LSLBinaryExpression* bin_expr)
 
         // Okay, this operation wasn't one we could handle with a K-variant opcode.
         // Evaluate RHS into a register (LSL's right-to-left evaluation order)
-        auto rhs_reg = handlePositionIndependentExpr(rhs);
+        auto rhs_reg = evalExprToSourceReg(rhs);
         if (need_rhs_copy)
         {
             uint8_t new_rhs_reg = allocReg(rhs);
@@ -1523,7 +1523,7 @@ bool LuauVisitor::visit(LSLBinaryExpression* bin_expr)
         }
 
         // Fallback to regular register-register operations
-        const auto lhs_reg = handlePositionIndependentExpr(lhs);
+        const auto lhs_reg = evalExprToSourceReg(lhs);
         mBuilder->emitABC(luau_op, target_reg, lhs_reg, rhs_reg);
         // maybeMove(expected_target, target_reg);
         return false;
@@ -1547,8 +1547,8 @@ bool LuauVisitor::visit(LSLBinaryExpression* bin_expr)
     if (luau_op != LOP_NOP)
     {
         // Visit RHS first because LSL is awful
-        uint8_t rhs_reg = handlePositionIndependentExpr(rhs);
-        uint8_t lhs_reg = handlePositionIndependentExpr(lhs);
+        uint8_t rhs_reg = evalExprToSourceReg(rhs);
+        uint8_t lhs_reg = evalExprToSourceReg(lhs);
 
         if (swap_regs)
             std::swap(rhs_reg, lhs_reg);
@@ -1621,7 +1621,7 @@ bool LuauVisitor::visit(LSLFunctionExpression *func_expr)
         auto *first_arg = (LSLExpression *)func_expr->getArguments()->getChild(0);
         // Make sure we don't keep around any registers used for generating the list
         [[maybe_unused]] RegScope scope(this);
-        const auto res_idx = handlePositionIndependentExpr(first_arg);
+        const auto res_idx = evalExprToSourceReg(first_arg);
         mBuilder->emitABC(LOP_LENGTH, target_reg, res_idx, 0);
         return false;
     }
@@ -2011,8 +2011,12 @@ int16_t LuauVisitor::nodeSymIdToConstant(LSLASTNode* node, bool string_only)
 
 
 /// Evaluate an expression where we don't necessarily care which register
-/// the result ends up in.
-uint8_t LuauVisitor::handlePositionIndependentExpr(LSLExpression* expr)
+/// the result ends up in. Usually because we just need a temporary
+/// for another operation. This has the nice property that if we just
+/// want a source register for another operation and we already have a local
+/// lvalue, we can just take that lvalue's source reg in many cases.
+/// Otherwise it's a temporary we just allocated.
+uint8_t LuauVisitor::evalExprToSourceReg(LSLExpression* expr)
 {
     // If you need the result loaded into a specific register, calling this is a
     // very bad error.

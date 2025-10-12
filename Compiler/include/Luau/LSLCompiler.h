@@ -97,7 +97,7 @@ protected:
     /// Note that this can ONLY be done in cases where we know a `MOVE` isn't strictly
     /// necessary, it isn't appropriate when we need a particular register order like in `CALL`s.
     /// Basically, if you want the result to end up in a specific register, you can't use this.
-    uint8_t handlePositionIndependentExpr(LSLExpression *expr);
+    uint8_t evalExprToSourceReg(LSLExpression *expr);
     void pushArgument(LSLExpression* expr, bool want_float_cast=true);
     unsigned int pushConstant(LSLConstant* cv);
 
