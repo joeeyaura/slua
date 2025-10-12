@@ -113,13 +113,8 @@ bool LuauResourceVisitor::visit(LSLUnaryExpression *un_expr)
     if (op == OP_PRE_INCR || op == OP_POST_INCR || op == OP_PRE_DECR || op == OP_POST_DECR)
     {
         auto *lvalue = (LSLLValueExpression *)child_expr;
-        auto itype = lvalue->getIType();
-        if (itype == LST_INTEGER)
-            _mCurrentFunc->needs_int_one = true;
-        else if (itype == LST_FLOATINGPOINT)
-            _mCurrentFunc->needs_float_one = true;
-        else if (itype == LST_VECTOR)
-            _mCurrentFunc->needs_vector_one = true;
+        // We will need the type's `one` value as a low-indexed constant to do these ops
+        _mCurrentFunc->needed_one_types.insert(lvalue->getType());
     }
     else if (op == OP_BIT_NOT)
     {
@@ -495,14 +490,9 @@ void LuauVisitor::buildFunction(LSLASTNode *func_like)
 
     // Pre-allocate constants that need small indices (detected by LuauResourceVisitor)
     // Do this first to ensure they get low constant indices
-    if (sym_data.needs_int_one)
-        addConstantInteger(1, UINT8_MAX);
-    if (sym_data.needs_float_one)
-        addConstantFloat(1.0f, UINT8_MAX);
-    if (sym_data.needs_vector_one)
+    for (auto one_type : sym_data.needed_one_types)
     {
-        // Vector <1, 1, 1> for vector increment/decrement
-        addConstantUnder(TYPE(LST_VECTOR)->getOneValue(), UINT8_MAX);
+        addConstantUnder(one_type->getOneValue(), UINT8_MAX);
     }
 
     // Pre-allocate import strings to ensure they're under index 1024

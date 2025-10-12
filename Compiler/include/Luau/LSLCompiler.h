@@ -17,9 +17,7 @@ struct LuauSymbolData {
     // Constants that need small indices (tracked during resource visitor pass)
     // Each import is stored as module,method pair (e.g., "bit32","bnot" or "lsl","cast")
     std::unordered_set<std::string> needed_import_strings; // Individual strings used in imports
-    bool needs_int_one = false;           // For integer ++/--
-    bool needs_float_one = false;         // For float ++/--
-    bool needs_vector_one = false;        // For vector ++/-- (unlikely but possible)
+    std::unordered_set<LSLType*> needed_one_types; // Types which we need the default `one` value for.
 };
 
 typedef std::unordered_map<LSLSymbol *, LuauSymbolData> LuauSymbolMap;
