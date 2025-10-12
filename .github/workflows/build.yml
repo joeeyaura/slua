@@ -24,7 +24,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: {name: macos, version: macos-13}
+          - os: {name: macos, version: macos-15}
             # MacOS runners really don't like the increased memory use associated with stack hardening tests
             cflags: ""
             addrsize: "64"
