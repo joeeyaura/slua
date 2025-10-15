@@ -1,6 +1,6 @@
 # Limiting memory usage by guest scripts in the VM
 
-**Status**: Implementation in progress
+**Status**: Implemented
 
 ## Summary
 
@@ -30,7 +30,8 @@ should always report the same amount of used memory, no matter where or when it 
 ### Memory Categories
 
 One thing common to all of our approaches is that we heavily use the Luau memcat system. Memcats allow us to tag
-heap allocations with an associated "memory category", and we use memcat 0 to tag allocations that aren't the
+heap allocations with an associated "memory category". All `GCObject`s that Luau manages for you on the heap have
+this `memcat` field as part of their struct. We use memcat 0 to tag allocations that aren't the
 "fault" of the user. Generally, all the C functions and things in the default globals are assigned memcat 0.
 
 Some things that are meant to be opaque to the user, like the enforced iteration order array for deserialized
