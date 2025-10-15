@@ -398,7 +398,7 @@ static int ll_deletesublist(lua_State *L)
 
         // This is basically a special case of list2list
         lua_pushboolean(L, true);
-        lua_pushcclosurek(L, ll_list2list, "ll_list2list", 1, nullptr);
+        lua_pushcclosurek(L, ll_list2list, "List2List", 1, nullptr);
         lua_pushvalue(L, 1);
         luaSL_pushinteger(L, target2 + 1);
         luaSL_pushinteger(L, target2 + count);
@@ -482,7 +482,7 @@ static int ll_listreplacelist(lua_State *L)
     int orig_len = lua_objlen(L, 1);
     // Let llDeleteSubList handle the tricky part.
     lua_pushboolean(L, true);
-    lua_pushcclosurek(L, ll_deletesublist, "ll_deletesublist", 1, nullptr);
+    lua_pushcclosurek(L, ll_deletesublist, "DeleteSubList", 1, nullptr);
     lua_pushvalue(L, 1);
     lua_pushvalue(L, 3);
     lua_pushvalue(L, 4);
@@ -525,7 +525,7 @@ static int ll_listreplacelist(lua_State *L)
     target = std::min(target, dest_len);
     // llListInsertList can handle this.
     lua_pushboolean(L, true);
-    lua_pushcclosurek(L, ll_listinsertlist, "ll_listinsertlist", 1, nullptr);
+    lua_pushcclosurek(L, ll_listinsertlist, "ListInsertList", 1, nullptr);
     lua_pushvalue(L, 1);
     lua_pushvalue(L, 2);
     luaSL_pushinteger(L, target);
