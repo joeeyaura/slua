@@ -23,7 +23,7 @@ int luaSL_pushdetectedevent(lua_State *L, int index, bool valid, bool can_change
 
 static int detected_event_index(lua_State *L)
 {
-    const lua_DetectedEvent *detected_event = (const lua_DetectedEvent *)lua_touserdatatagged(L, 1, UTAG_DETECTED_EVENT);
+    auto *detected_event = (const lua_DetectedEvent *)lua_touserdatatagged(L, 1, UTAG_DETECTED_EVENT);
     if (!detected_event)
         luaL_typeerror(L, 1, "DetectedEvent");
 
@@ -54,7 +54,7 @@ static int detected_event_index(lua_State *L)
 
 static int detected_event_call_ll_function(lua_State *L, const char *function_name)
 {
-    const lua_DetectedEvent *detected_event = (const lua_DetectedEvent *)lua_touserdatatagged(L, 1, UTAG_DETECTED_EVENT);
+    auto *detected_event = (const lua_DetectedEvent *)lua_touserdatatagged(L, 1, UTAG_DETECTED_EVENT);
     if (!detected_event)
         luaL_typeerror(L, 1, "DetectedEvent");
 
@@ -68,36 +68,9 @@ static int detected_event_call_ll_function(lua_State *L, const char *function_na
     return 1;
 }
 
-// TODO: these can all just be lambdas, they'll be reachable by the permanents collector
-//  through the LLEvents metatable.
-static int detected_event_get_owner(lua_State *L)
-{
-    return detected_event_call_ll_function(L, "DetectedOwner");
-}
-
-static int detected_event_get_name(lua_State *L)
-{
-    return detected_event_call_ll_function(L, "DetectedName");
-}
-
-static int detected_event_get_key(lua_State *L)
-{
-    return detected_event_call_ll_function(L, "DetectedKey");
-}
-
-static int detected_event_get_face(lua_State *L)
-{
-    return detected_event_call_ll_function(L, "DetectedFace");
-}
-
-static int detected_event_get_link_number(lua_State *L)
-{
-    return detected_event_call_ll_function(L, "DetectedLinkNumber");
-}
-
 static int detected_event_adjust_damage(lua_State *L)
 {
-    const lua_DetectedEvent *detected_event = (const lua_DetectedEvent *)lua_touserdatatagged(L, 1, UTAG_DETECTED_EVENT);
+    auto *detected_event = (const lua_DetectedEvent *)lua_touserdatatagged(L, 1, UTAG_DETECTED_EVENT);
     if (!detected_event)
         luaL_typeerror(L, 1, "DetectedEvent");
 
@@ -119,7 +92,7 @@ static int detected_event_adjust_damage(lua_State *L)
 
 static int detected_event_tostring(lua_State *L)
 {
-    const lua_DetectedEvent *detected_event = (const lua_DetectedEvent *)lua_touserdatatagged(L, 1, UTAG_DETECTED_EVENT);
+    auto *detected_event = (const lua_DetectedEvent *)lua_touserdatatagged(L, 1, UTAG_DETECTED_EVENT);
     if (!detected_event)
         luaL_typeerror(L, 1, "DetectedEvent");
 
@@ -146,21 +119,35 @@ void luaSL_setup_detectedevent_metatable(lua_State *L)
     lua_pushcfunction(L, detected_event_tostring, "__tostring");
     lua_setfield(L, -2, "__tostring");
 
+    // Helper macro for adding getter methods that call ll.Detected* functions
+#define ADD_DETECTED_GETTER(lua_name, ll_func_name) \
+    do { \
+        lua_pushcfunction(L, [](lua_State *L) -> int { \
+            return detected_event_call_ll_function(L, (ll_func_name)); \
+        }, lua_name); \
+        lua_setfield(L, -2, (lua_name)); \
+    } while(0)
+
     // Add the methods to the metatable
-    lua_pushcfunction(L, detected_event_get_owner, "getOwner");
-    lua_setfield(L, -2, "getOwner");
+    ADD_DETECTED_GETTER("getOwner", "DetectedOwner");
+    ADD_DETECTED_GETTER("getName", "DetectedName");
+    ADD_DETECTED_GETTER("getKey", "DetectedKey");
+    ADD_DETECTED_GETTER("getTouchFace", "DetectedFace");
+    ADD_DETECTED_GETTER("getLinkNumber", "DetectedLinkNumber");
+    ADD_DETECTED_GETTER("getGrab", "DetectedGrab");
+    ADD_DETECTED_GETTER("getGroup", "DetectedGroup");
+    ADD_DETECTED_GETTER("getPos", "DetectedPos");
+    ADD_DETECTED_GETTER("getRot", "DetectedRot");
+    ADD_DETECTED_GETTER("getTouchBinormal", "DetectedTouchBinormal");
+    ADD_DETECTED_GETTER("getTouchNormal", "DetectedTouchNormal");
+    ADD_DETECTED_GETTER("getTouchPos", "DetectedTouchPos");
+    ADD_DETECTED_GETTER("getTouchST", "DetectedTouchST");
+    ADD_DETECTED_GETTER("getTouchUV", "DetectedTouchUV");
+    ADD_DETECTED_GETTER("getType", "DetectedType");
+    ADD_DETECTED_GETTER("getVel", "DetectedVel");
+    ADD_DETECTED_GETTER("getRezzer", "DetectedRezzer");
 
-    lua_pushcfunction(L, detected_event_get_name, "getName");
-    lua_setfield(L, -2, "getName");
-
-    lua_pushcfunction(L, detected_event_get_key, "getKey");
-    lua_setfield(L, -2, "getKey");
-
-    lua_pushcfunction(L, detected_event_get_face, "getFace");
-    lua_setfield(L, -2, "getFace");
-
-    lua_pushcfunction(L, detected_event_get_link_number, "getLinkNumber");
-    lua_setfield(L, -2, "getLinkNumber");
+#undef ADD_DETECTED_GETTER
 
     lua_pushcfunction(L, detected_event_adjust_damage, "adjustDamage");
     lua_setfield(L, -2, "adjustDamage");
@@ -238,7 +225,7 @@ static int llevents_newindex(lua_State *L)
 
 static int llevents_on(lua_State *L)
 {
-    const lua_LLEvents *llevents = (const lua_LLEvents *)lua_touserdatatagged(L, 1, UTAG_LLEVENTS);
+    auto *llevents = (const lua_LLEvents *)lua_touserdatatagged(L, 1, UTAG_LLEVENTS);
     if (!llevents)
         luaL_typeerror(L, 1, "LLEvents");
 
@@ -280,7 +267,7 @@ static int llevents_off(lua_State *L)
 {
     auto *sl_state = LUAU_GET_SL_VM_STATE(lua_mainthread(L));
 
-    const lua_LLEvents *llevents = (const lua_LLEvents *)lua_touserdatatagged(L, 1, UTAG_LLEVENTS);
+    auto *llevents = (const lua_LLEvents *)lua_touserdatatagged(L, 1, UTAG_LLEVENTS);
     if (!llevents)
         luaL_typeerror(L, 1, "LLEvents");
 
@@ -389,7 +376,7 @@ static int llevents_once_wrapper_cont(lua_State *L, int status)
 
 static int llevents_once(lua_State *L)
 {
-    const lua_LLEvents *llevents = (const lua_LLEvents *)lua_touserdatatagged(L, 1, UTAG_LLEVENTS);
+    auto *llevents = (const lua_LLEvents *)lua_touserdatatagged(L, 1, UTAG_LLEVENTS);
     if (!llevents)
         luaL_typeerror(L, 1, "LLEvents");
 
@@ -415,7 +402,7 @@ static int llevents_once(lua_State *L)
 
 static int llevents_listeners(lua_State *L)
 {
-    const lua_LLEvents *llevents = (const lua_LLEvents *)lua_touserdatatagged(L, 1, UTAG_LLEVENTS);
+    auto *llevents = (const lua_LLEvents *)lua_touserdatatagged(L, 1, UTAG_LLEVENTS);
     if (!llevents)
         luaL_typeerror(L, 1, "LLEvents");
 
@@ -554,7 +541,7 @@ int llevents_handle_event_cont(lua_State *L, int status)
 static int llevents_handle_event_init(lua_State *L)
 {
     // Arguments: llevents_userdata, event_name, ...event_args
-    const lua_LLEvents *llevents = (const lua_LLEvents *)lua_touserdatatagged(L, 1, UTAG_LLEVENTS);
+    auto *llevents = (const lua_LLEvents *)lua_touserdatatagged(L, 1, UTAG_LLEVENTS);
     if (!llevents)
         luaL_typeerror(L, 1, "LLEvents");
 
@@ -597,8 +584,6 @@ static int llevents_handle_event_init(lua_State *L)
         // First argument should be num_detected for multi-event types,
         // which is of course the _third_ argument for `handleEvent()` itself.
         int num_detected = luaL_checkinteger(L, 3);
-
-        // TODO: some kind of RAII thingy that temporarily sets memcat to 0 here, these should be free.
 
         // Create DetectedEvent wrappers table
         lua_createtable(L, num_detected, 0);
