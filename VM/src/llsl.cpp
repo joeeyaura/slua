@@ -1036,6 +1036,21 @@ static int push_uuid_common(lua_State *L, const char *str, size_t len, bool comp
     if (lua_rawget(L, -3) != LUA_TNIL)
     {
         /* ... weak_table uuid_str uuid_val */
+
+        // Okay, we're able to use an interned UUID, but make sure we call the
+        // alloc hook to make sure the memory manager knows that we have a new
+        // reference to an interned object that might not have appeared in
+        // the script's reference graph before
+        auto *uuid_tval = luaA_toobject(L, -1);
+        auto *g = L->global;
+        if (LUAU_LIKELY(!!g->cb.beforeallocate) && L->activememcat > 1 && gcvalue(uuid_tval)->gch.memcat > 1)
+        {
+            // See `lgctraverse.cpp` for reasoning behind this
+            const size_t uuid_size = 4;
+            if (LUAU_LIKELY(g->GCthreshold != SIZE_MAX) && g->cb.beforeallocate(L, 0, uuid_size))
+                luaD_throw(L, LUA_ERRMEM);
+        }
+
         lua_replace(L, -3);
         /* ... uuid_val uuid_str */
         lua_pop(L, 1);
@@ -1047,14 +1062,9 @@ static int push_uuid_common(lua_State *L, const char *str, size_t len, bool comp
     lua_pop(L, 1);
 
     // Allocate a userdata with just enough space for the UUID str
-    auto *uuid = (lua_LSLUUID *)lua_newuserdatatagged(L,
+    auto *uuid = (lua_LSLUUID *)lua_newuserdatataggedwithmetatable(L,
         sizeof(lua_LSLUUID), UTAG_UUID);
 
-    /* ... weak_table uuid_str uuid_val */
-
-    lua_getuserdatametatable(L, UTAG_UUID);
-    /* ... weak_table uuid_str uuid_val uuid_mt */
-    lua_setmetatable(L, -2);
     /* ... weak_table uuid_str uuid_val */
 
     // The UUID just holds the TString instance for the underlying data,

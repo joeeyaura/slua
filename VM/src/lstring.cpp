@@ -125,7 +125,7 @@ static TString* findstring(lua_State * L, const char *data, unsigned int len, un
             if (isdead(L->global, obj2gco(el)))
                 changewhite(obj2gco(el));
 
-            // Note that even if we already had a copy of this string lying around, we don't
+            // ServerLua: Note that even if we already had a copy of this string lying around, we don't
             // necessarily know that this _user context_ held that string before. Therefore,
             // if we're able to avoid creating a string due to interning, we still need to
             // pretend as if we did an allocation. This makes sure reported memory usage
