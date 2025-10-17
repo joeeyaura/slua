@@ -1313,10 +1313,18 @@ static void u_userdata(Info *info) {                                   /* ... */
     uint8_t utag = READ_VALUE(uint8_t);
     switch(utag) {
       case UTAG_PROXY:
-      case UTAG_QUATERNION:
       {
           size_t size = READ_VALUE(ares_size_t);
           void* value = lua_newuserdatatagged(info->L, size, utag);
+          /* ... udata */
+          READ_RAW(value, size);
+          registerobject(info);
+          break;
+      }
+      case UTAG_QUATERNION:
+      {
+          size_t size = READ_VALUE(ares_size_t);
+          void* value = lua_newuserdatataggedwithmetatable(info->L, size, utag);
                                                                  /* ... udata */
           READ_RAW(value, size);
           registerobject(info);

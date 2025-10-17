@@ -74,13 +74,11 @@ static int lsl_quaternion_ctor(lua_State *L)
     const auto y = luaL_checknumber(L, 2);
     const auto z = luaL_checknumber(L, 3);
     const auto s = luaL_checknumber(L, 4);
-    auto *quat = (float *)lua_newuserdatatagged(L, sizeof(float) * 4, UTAG_QUATERNION);
+    auto *quat = (float *)lua_newuserdatataggedwithmetatable(L, sizeof(float) * 4, UTAG_QUATERNION);
     quat[0] = (float)x;
     quat[1] = (float)y;
     quat[2] = (float)z;
     quat[3] = (float)s;
-    lua_getuserdatametatable(L, UTAG_QUATERNION);
-    lua_setmetatable(L, -2);
     return 1;
 }
 
