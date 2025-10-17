@@ -13,6 +13,8 @@ in Luau proper are to be submitted upstream as required.
 
 The changes to Luau proper mainly involve adding hooks to support VM state serialization, and executing LSL.
 
+[See the diff between SLua and the upstream Luau base](https://github.com/secondlife/slua/compare/slua_base...main?expand=1).
+
 * Basic VM state serialization is complete. A yielded thread can be serialized, along with its global environment
   without unnecessary duplication of protos from the "base" system image.
 * Many cheap "forks" of a base script may be spawned inside a VM, each with their own isolated state
@@ -25,7 +27,9 @@ The changes to Luau proper mainly involve adding hooks to support VM state seria
 # Contributing
 
 Sure! If you're interested in adding a feature, please make sure you file an issue before making a PR, but PRs
-for fixes are most welcome.
+for fixes are most welcome. Please note that since this fork tries to track upstream Luau relatively closely,
+some contributions are better submitted directly upstream so the broader Luau ecosystem can benefit, supposing
+they aren't in SLua-specific code.
 
 ## Building
 

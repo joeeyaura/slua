@@ -67,6 +67,10 @@ Naturally, `lua_userthreadsize` and `luaC_enumreachableuserallocs` must be chang
 this `std::unordered_set<void *>` full of pointers, and we should add a new API function to build that set which returns
 a `std::unordered_set<void *>`.
 
+Since our memory limitation code has no idea which potentially-interned strings are already referenced by a particular
+string, any time the Luau VM tries to create a string, but an interned copy was found, we still need to invoke the
+allocation hooks as if we were actually creating a new string.
+
 ## Potential Drawbacks
 
 Having all scripts within a single Lua VM with a single GC does have its drawbacks. When bytes get deallocated,
