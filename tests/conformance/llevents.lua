@@ -184,16 +184,33 @@ local function second_handler()
     table.insert(call_order, 2)
 end
 
+local function third_handler()
+    table.insert(call_order, 3)
+end
+
+local function fourth_handler()
+    table.insert(call_order, 4)
+end
+
+
 local function first_handler()
     table.insert(call_order, 1)
     -- This will only take effect for the _next_ event.
     LLEvents:off('touch_start', second_handler)
+    -- This should never get called during this cycle because
+    -- it was registered _during_ the event handling.
+    LLEvents:on('touch_start', fourth_handler)
 end
 
 LLEvents:on('touch_start', first_handler)
 LLEvents:on('touch_start', second_handler)
+LLEvents:on('touch_start', second_handler)
+LLEvents:on('touch_start', second_handler)
+LLEvents:on('touch_start', third_handler)
+
+-- This reflects desired behavior.
 LLEvents:_handleEvent('touch_start', 1)
-assert(lljson.encode(call_order) == "[1,2]")
+assert(lljson.encode(call_order) == "[1,2,2,3]")
 
 unreg_all()
 

@@ -258,11 +258,18 @@ static int llevents_on(lua_State *L)
         lua_setfield(L, -3, event_name);
     }
 
-    // Add the handler to the array
+    // Wrap the handler in a single-element table for unique identity
+    // This makes ensures that we can (somewhat sanely) detect if a
+    // handler is removed during `_handleEvent()` without weird edge cases.
+    lua_createtable(L, 1, 0);
     lua_pushvalue(L, 3); // handler function
+    lua_rawseti(L, -2, 1); // wrapper[1] = handler
+    lua_setreadonly(L, -1, true); // Readonly since we never expect mutation.
+
+    // Add the wrapper to the end of the array
     lua_rawseti(L, -2, lua_objlen(L, -2) + 1);
 
-    // Return the handler so it can be unregistered later
+    // Return the unwrapped handler so it can be unregistered later
     lua_pushvalue(L, 3);
     return 1;
 }
@@ -294,18 +301,20 @@ static int llevents_off(lua_State *L)
         return 1;
     }
 
-    // Find and remove the handler
+    // Find and remove the wrapper containing the handler
     // This might seem jank, but it's basically a merged `table.find()` and `table.remove()`.
     int len = lua_objlen(L, -1);
     bool found = false;
 
     for (int i = len; i >= 1; i--)
     {
-        lua_rawgeti(L, -1, i);
-        if (lua_equal(L, -1, 3))
+        lua_rawgeti(L, -1, i); // Get wrapper table
+        // Get the actual handler from wrapper[1]
+        lua_rawgeti(L, -1, 1);
+        if (lua_rawequal(L, -1, 3))
         {
-            // pop the handler, we don't need it.
-            lua_pop(L, 1);
+            // pop the unwrapped handler and wrapper, we don't need them.
+            lua_pop(L, 2);
             // Remove from array by shifting elements down
             for (int j = i; j < len; j++)
             {
@@ -317,8 +326,8 @@ static int llevents_off(lua_State *L)
             found = true;
             break;
         }
-        // pop the old value.
-        lua_pop(L, 1);
+        // pop the unwrapped handler and wrapper.
+        lua_pop(L, 2);
     }
 
     // Clear out the empty handler array if we have no more handlers for this event type
@@ -422,8 +431,19 @@ static int llevents_listeners(lua_State *L)
         return 1;
     }
 
-    // Return a clone of the handlers array
+    // Return a clone of the handlers array with unwrapped handlers
     lua_clonetable(L, -1);
+    int len = lua_objlen(L, -1);
+
+    // Unwrap each handler
+    for (int i = 1; i <= len; i++)
+    {
+        lua_rawgeti(L, -1, i); // Get wrapper table
+        lua_rawgeti(L, -1, 1); // Get wrapper[1] (the actual handler)
+        lua_rawseti(L, -3, i); // Set it back in the cloned array
+        lua_pop(L, 1); // Pop the wrapper
+    }
+
     return 1;
 }
 
@@ -477,8 +497,10 @@ enum EventHandlerStack {
     HANDLERS_TABLE = 4,
     // number of args after `ARG_START`
     NARGS = 5,
+    // The original (live) handlers table before cloning
+    ORIGINAL_HANDLERS_TABLE = 6,
     // multi-args start after this.
-    ARG_START = 6
+    ARG_START = 7
 };
 
 static bool is_multi_event(const char* event_name)
@@ -501,6 +523,33 @@ int llevents_handle_event_cont(lua_State *L, int status)
     for (; handler_index <= handlers_len; ++handler_index)
     {
         lua_rawgeti(L, HANDLERS_TABLE, handler_index);
+        LUAU_ASSERT(lua_type(L, -1) == LUA_TTABLE);
+
+        // Check if this wrapper still exists in the original handlers table
+        bool found = false;
+        int original_len = lua_objlen(L, ORIGINAL_HANDLERS_TABLE);
+        for (int i = 1; i <= original_len; i++)
+        {
+            lua_rawgeti(L, ORIGINAL_HANDLERS_TABLE, i);
+            if (lua_rawequal(L, -1, -2))
+            {
+                found = true;
+                lua_pop(L, 1); // Pop the original wrapper
+                break;
+            }
+            lua_pop(L, 1); // Pop the original wrapper
+        }
+
+        if (!found)
+        {
+            // Handler was removed during iteration, skip it
+            lua_pop(L, 1); // Pop the wrapper from cloned table
+            continue;
+        }
+
+        // Unwrap to get the actual handler function
+        lua_rawgeti(L, -1, 1); // Get wrapper[1]
+        lua_remove(L, -2); // Remove the wrapper table
         LUAU_ASSERT(lua_type(L, -1) == LUA_TFUNCTION);
 
         // Push arguments for this handler call
@@ -575,9 +624,10 @@ static int llevents_handle_event_init(lua_State *L)
     }
 
     // Clone the handlers array so modifications during handling don't affect us
+    // Keep the original for checking if handlers were removed during iteration
     lua_clonetable(L, -1);
-    lua_remove(L, -2);  // Remove original handlers array
-    lua_remove(L, -2);  // Remove listeners_tab
+    lua_remove(L, -3);  // Remove listeners_tab
+    // Stack now has: [..., original_handlers, cloned_handlers]
     int handlers_len = lua_objlen(L, -1);
 
     // Empty array isn't valid, val should be nil if no handlers.
@@ -613,11 +663,14 @@ static int llevents_handle_event_init(lua_State *L)
     lua_pushinteger(L, handlers_len);
     lua_insert(L, HANDLERS_LEN);
 
-    // handlers_table already on top
+    // cloned handlers_table already on top
     lua_insert(L, HANDLERS_TABLE);
 
     lua_pushinteger(L, nargs);
     lua_insert(L, NARGS);
+
+    // original handlers_table (for checking removed handlers)
+    lua_insert(L, ORIGINAL_HANDLERS_TABLE);
 
     // Remove llevents and event_name which are now at ARG_START
     lua_remove(L, ARG_START);  // Remove llevents
