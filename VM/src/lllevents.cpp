@@ -208,8 +208,12 @@ static int llevents_newindex(lua_State *L)
     if (!llevents)
         luaL_typeerror(L, 1, "LLEvents");
 
-    luaL_checkstring(L, 2);
+    luaL_checktype(L, 2, LUA_TSTRING);
     luaL_checktype(L, 3, LUA_TFUNCTION);
+
+    // Check if handler was defined with : syntax
+    if (luaSL_ismethodstyle(L, 3))
+        luaL_errorL(L, "Event handler defined with ':' syntax; use '.' instead");
 
     // Setting a function - treat as event handler registration
     // Call LLEvents:on(event_name, handler)

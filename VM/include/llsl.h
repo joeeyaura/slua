@@ -71,6 +71,8 @@ LUA_API void luaSL_pushboollike(lua_State *L, int val);
 LUA_API uint8_t luaSL_lsl_type(lua_State *L, int idx);
 /// Should only be called in an interrupt handler!
 LUA_API YieldableStatus luaSL_may_interrupt(lua_State *L);
+/// Returns 1 if the function at idx was defined with : syntax (has implicit self parameter), 0 otherwise
+LUA_API int luaSL_ismethodstyle(lua_State *L, int idx);
 
 typedef struct lua_TValue TValue;
 uint8_t lua_lsl_type(const TValue *tv);

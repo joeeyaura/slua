@@ -1430,6 +1430,7 @@ p_proto(Info *info) {                                            /* ... proto */
   WRITE_VALUE(p->bytecodeid, int);
 
   WRITE_VALUE(p->maxstacksize, uint8_t);
+  WRITE_VALUE(p->flags, uint8_t);
   WRITE_VALUE(p->numparams, uint8_t);
   WRITE_VALUE(p->nups, uint8_t);
   WRITE_VALUE(p->is_vararg, uint8_t);
@@ -1547,6 +1548,7 @@ u_proto(Info *info) {                                            /* ... proto */
   p->bytecodeid = READ_VALUE(int);
 
   p->maxstacksize = READ_VALUE(uint8_t);
+  p->flags = READ_VALUE(uint8_t);
   p->numparams = READ_VALUE(uint8_t);
   p->nups = READ_VALUE(uint8_t);
   p->is_vararg = READ_VALUE(uint8_t);

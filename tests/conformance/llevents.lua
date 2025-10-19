@@ -206,6 +206,15 @@ assert_errors(
     "'disallowed' is not a supported event name"
 )
 
+-- Don't define event handlers with the method style declaration. It
+-- adds an implicit self parameter.
+assert_errors(
+    function()
+        function LLEvents:touch_start(detected) print(detected) end
+    end,
+    "Event handler defined with ':' syntax; use '.'"
+)
+
 -- Run this last, check that we can block handle event calls
 set_may_call_handle_event(false)
 LLEvents:on('listen', function() assert(false) end)

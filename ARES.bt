@@ -697,6 +697,7 @@ struct Proto {
     int bytecode_id;
 
     uint8_t maxstacksize;   /* Size of stack reserved for the function */
+    uint8_t flags;      /* Flags related to the function definition */
     uint8_t numparams;  /* Number of parameters taken */
     uint8_t nups;       /* Number of upvalues */
     uint8_t is_vararg;  /* 1 if function accepts varargs, 0 otherwise */

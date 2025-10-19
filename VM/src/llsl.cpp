@@ -1234,6 +1234,18 @@ int luaSL_pushnativeinteger(lua_State *L, int val)
     return 1;
 }
 
+int luaSL_ismethodstyle(lua_State *L, int idx)
+{
+    if (lua_type(L, idx) != LUA_TFUNCTION)
+        return 0;
+
+    Closure *cl = clvalue(luaA_toobject(L, idx));
+    if (cl->isC)
+        return 0;  // C functions don't have proto
+
+    return ((cl->l.p->flags & LPF_METHOD_STYLE)) == LPF_METHOD_STYLE;
+}
+
 void luaSL_pushindexlike(lua_State *L, int index)
 {
     bool compat_mode = lua_toboolean(L, lua_upvalueindex(1));

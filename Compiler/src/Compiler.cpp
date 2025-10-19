@@ -290,6 +290,9 @@ struct Compiler
         if (func->hasNativeAttribute())
             protoflags |= LPF_NATIVE_FUNCTION;
 
+        if (func->self)
+            protoflags |= LPF_METHOD_STYLE;
+
         bytecode.endFunction(uint8_t(stackSize), uint8_t(upvals.size()), protoflags);
 
         Function& f = functions[func];
