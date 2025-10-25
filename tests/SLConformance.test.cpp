@@ -145,6 +145,14 @@ static int lua_collectgarbage(lua_State* L)
     }
 }
 
+static int test_integer_call(lua_State *L)
+{
+    luaL_checkany(L, 1);
+    lua_settop(L, 1);
+    lua_pushunsigned(L, (unsigned int)LSLIType::LST_INTEGER);
+    return lsl_cast(L);
+}
+
 // Helper callback that enforces reachability-based memory limits
 // Reads max_mem and free_objects from the RuntimeState
 static int memoryLimitCallback(lua_State *L, size_t osize, size_t nsize)
@@ -210,6 +218,7 @@ static StateRef runConformance(const char* name, int32_t (*yield)(lua_State* L) 
     // Register a few global functions for conformance tests
     std::vector<luaL_Reg> funcs = {
         {"collectgarbage", lua_collectgarbage},
+        {"integer", test_integer_call},
     };
 
     // "null" terminate the list of functions to register

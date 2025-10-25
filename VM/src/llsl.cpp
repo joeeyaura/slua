@@ -1349,8 +1349,11 @@ int luaopen_sl(lua_State* L)
     lua_setglobal(L, "toquaternion");
     lua_setglobal(L, "torotation");
 
-    lua_pushcfunction(L, lsl_to_integer, "integer");
-    lua_setglobal(L, "integer");
+    if (LUAU_IS_LSL_VM(L))
+    {
+        lua_pushcfunction(L, lsl_to_integer, "integer");
+        lua_setglobal(L, "integer");
+    }
 
     lua_SLRuntimeState *lsl_runtime_state = LUAU_GET_SL_VM_STATE(L);
 
