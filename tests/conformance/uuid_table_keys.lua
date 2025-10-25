@@ -1,6 +1,6 @@
-local foo = uuid('foo')
-local bar = uuid('bar')
-local foo2 = uuid('foo')
+local foo = uuid('00000000-0000-0000-0000-000000000001')
+local bar = uuid('00000000-0000-0000-0000-000000000002')
+local foo2 = uuid('00000000-0000-0000-0000-000000000001')
 
 -- This should be turned into a compressed key
 local real_str = "12345678-9abc-def0-1234-56789abcdef0"

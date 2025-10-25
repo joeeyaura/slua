@@ -14,7 +14,7 @@ assert(lljson.encode({integer(1)}) == "[1]")
 assert(lljson.encode(true) == "true")
 assert(lljson.encode({"foo"}) == '["foo"]')
 -- UUIDs are basically just strings, encode them as such.
-assert(lljson.encode({uuid("foo")}) == '["foo"]')
+assert(lljson.encode({uuid("00000000-0000-0000-0000-000000000001")}) == '["00000000-0000-0000-0000-000000000001"]')
 assert(lljson.encode({foo="bar"}) == '{"foo":"bar"}')
 -- key -> nil is the same as deleting a key in Lua, we have no
 -- way to distinguish between a key that has a nil value and

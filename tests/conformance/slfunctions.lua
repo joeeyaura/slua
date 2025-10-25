@@ -33,15 +33,15 @@ assert(typeof(quaternion(0, 0, 0, 1)) == "quaternion")
 assert(tovector("", "nonsense") == nil)
 assert(toquaternion("", "nonsense") == nil)
 
-assert(not (uuid("foo") == uuid("bar")))
-assert(uuid("foo") ~= uuid("bar"))
-assert(uuid("foo") == uuid("foo"))
-assert(not (uuid("foo") ~= uuid("foo")))
-assert(typeof(uuid("foo") == "uuid"))
-assert(not uuid("foo").istruthy)
+assert(not (uuid("00000000-0000-0000-0000-000000000001") == uuid("00000000-0000-0000-0000-000000000002")))
+assert(uuid("00000000-0000-0000-0000-000000000001") ~= uuid("00000000-0000-0000-0000-000000000002"))
+assert(uuid("00000000-0000-0000-0000-000000000001") == uuid("00000000-0000-0000-0000-000000000001"))
+assert(not (uuid("00000000-0000-0000-0000-000000000001") ~= uuid("00000000-0000-0000-0000-000000000001")))
+assert(typeof(uuid("00000000-0000-0000-0000-000000000001") == "uuid"))
+assert(not uuid("00000000-0000-0000-0000-000000000000").istruthy)
 assert(not uuid("00000000-0000-0000-0000-000000000000").istruthy)
 assert(uuid("00000000-0000-0000-0000-00000000000a").istruthy)
--- Won't be compressed, but it's still truthy!
+-- Uppercase is now canonicalized to lowercase and compressed
 assert(uuid("00000000-0000-0000-0000-00000000000A").istruthy)
 -- uuid(uuid()) is a the identity function
 assert(uuid(uuid("00000000-0000-0000-0000-00000000000a")).istruthy)

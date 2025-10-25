@@ -107,6 +107,45 @@ static int lsl_key_ctor(lua_State *L)
     return luaSL_pushuuidlstring(L, data, len);
 }
 
+static bool parse_uuid_str(const char *in_string, size_t len, char *out, bool flexible);
+static int push_uuid_common(lua_State *L, const char *str, size_t len, bool compressed);
+
+// UUID constructor for Lua/SLua mode (strict + canonicalize)
+static int lua_uuid_ctor(lua_State *L)
+{
+    if (lua_type(L, 1) == LUA_TUSERDATA)
+    {
+        // If this is already a UUID just return the same UUID.
+        bool compressed;
+        luaSL_checkuuid(L, 1, &compressed);
+        lua_pushvalue(L, 1);
+        return 1;
+    }
+
+    size_t len;
+    const char *data = luaL_checklstring(L, 1, &len);
+
+    // Empty string → NULL_KEY
+    if (len == 0)
+    {
+        return push_uuid_common(L, NULL_UUID, UUID_BYTES, true);
+    }
+
+    // Try flexible parsing (case-insensitive + broken format)
+    char uuid_bytes[UUID_BYTES];
+    if (parse_uuid_str(data, len, uuid_bytes, true))
+    {
+        // Valid UUID → compressed binary
+        return push_uuid_common(L, uuid_bytes, UUID_BYTES, true);
+    }
+    else
+    {
+        // Invalid UUID → nil
+        lua_pushnil(L);
+        return 1;
+    }
+}
+
 static std::string _float_to_str(float v, bool high_precision, bool neg_zero = true)
 {
     return NumberFormatter::NumberToString(high_precision ? "F6" : "F5", v, neg_zero);
@@ -742,15 +781,25 @@ static bool validate_uuid_str(const char *in_string, size_t len)
     return !all_zero;
 }
 
-static bool parse_uuid_str(const char *in_string, size_t len, char *out)
+static bool parse_uuid_str(const char *in_string, size_t len, char *out, bool flexible)
 {
     // This is cribbed from indra's UUID parser,
-    // except it will return false for broken_format UUIDs, and empty
-    // strings aren't treated as the null UUID.
+    // except it will return false for broken_format UUIDs and empty
+    // strings aren't treated as the null UUID, unless flexible mode is enabled.
+    // When flexible=true: accepts uppercase (converts to lowercase), accepts broken format (35 chars)
 
+    bool broken_format = false;
     if (len != (UUID_STR_LENGTH - 1))        /* Flawfinder: ignore */
     {
-        return false;
+        // When flexible, allow the broken 35-character format (missing one hyphen)
+        if (flexible && len == (UUID_STR_LENGTH - 2))        /* Flawfinder: ignore */
+        {
+            broken_format = true;
+        }
+        else
+        {
+            return false;
+        }
     }
 
     uint8_t cur_pos = 0;
@@ -760,6 +809,11 @@ static bool parse_uuid_str(const char *in_string, size_t len, char *out)
         {
             // skip by dashes
             cur_pos++;
+            if (broken_format && (i == 10))
+            {
+                // Missing dash in the broken format
+                cur_pos--;
+            }
         }
 
         out[i] = 0;
@@ -774,9 +828,17 @@ static bool parse_uuid_str(const char *in_string, size_t len, char *out)
         }
         else if ((in_string[cur_pos] >= 'A') && (in_string[cur_pos] <='F'))
         {
-            // We consider capitals to be non-canonical, we don't want to silently
-            // convert the string to lowercase
-            return false;
+            if (flexible)
+            {
+                // In flexible mode, convert uppercase to lowercase
+                out[i] |= (uint8_t)(10 + in_string[cur_pos] - 'A');
+            }
+            else
+            {
+                // We consider capitals to be non-canonical, we don't want to silently
+                // convert the string to lowercase
+                return false;
+            }
         }
         else
         {
@@ -796,8 +858,16 @@ static bool parse_uuid_str(const char *in_string, size_t len, char *out)
         }
         else if ((in_string[cur_pos] >= 'A') && (in_string[cur_pos] <='F'))
         {
-            // see above note about capital letters
-            return false;
+            if (flexible)
+            {
+                // In flexible mode, convert uppercase to lowercase
+                out[i] |= (uint8_t)(10 + in_string[cur_pos] - 'A');
+            }
+            else
+            {
+                // see above note about capital letters
+                return false;
+            }
         }
         else
         {
@@ -1098,7 +1168,7 @@ int luaSL_pushuuidlstring(lua_State *L, const char *str, size_t len)
 {
     char uuid_bytes[UUID_BYTES] = {0};
     // Try to push this as a compact UUID if it is one.
-    if (parse_uuid_str(str, len, (char *)&uuid_bytes))
+    if (parse_uuid_str(str, len, (char *)&uuid_bytes, false))
     {
         return push_uuid_common(L, (char *)&uuid_bytes, UUID_BYTES, true);
     }
@@ -1338,7 +1408,14 @@ int luaopen_sl(lua_State* L)
     // Alias it as "rotation"
     lua_setglobal(L, "rotation");
 
-    lua_pushcfunction(L, lsl_key_ctor, "uuid");
+    if (LUAU_IS_LSL_VM(L))
+    {
+        lua_pushcfunction(L, lsl_key_ctor, "uuid");
+    }
+    else
+    {
+        lua_pushcfunction(L, lua_uuid_ctor, "uuid");
+    }
     lua_setglobal(L, "uuid");
 
     lua_pushcfunction(L, lsl_to_vector, "tovector");
