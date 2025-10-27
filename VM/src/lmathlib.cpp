@@ -226,14 +226,26 @@ static int math_max(lua_State* L)
 static int math_random(lua_State* L)
 {
     global_State* g = L->global;
+    // ServerLua: support host-provided entropy source (ideally a CSPRNG)
+    lua_randomProvider randomProvider = nullptr;
+    if (LUAU_IS_SL_VM(L))
+    {
+        // We don't support seeding the RNG in this configuration, just ignore.
+        // TODO: Is explicit warning better? Some Lua scripts try to seed rand
+        //  with `time()` and such manually in an attempt to get more "random" values
+        //  which doesn't really work. We stay silent to not break them, but users
+        //  of this API who genuinely want deterministic behavior may be surprised.
+        randomProvider = LUAU_GET_SL_VM_STATE(L)->randomProvider;
+    }
+
     switch (lua_gettop(L))
     { // check number of arguments
     case 0:
     { // no arguments
         // Using ldexp instead of division for speed & clarity.
         // See http://mumble.net/~campbell/tmp/random_real.c for details on generating doubles from integer ranges.
-        uint32_t rl = pcg32_random(&g->rngstate);
-        uint32_t rh = pcg32_random(&g->rngstate);
+        uint32_t rl = randomProvider ? randomProvider(L) : pcg32_random(&g->rngstate);
+        uint32_t rh = randomProvider ? randomProvider(L) : pcg32_random(&g->rngstate);
         double rd = ldexp(double(rl | (uint64_t(rh) << 32)), -64);
         lua_pushnumber(L, rd); // number between 0 and 1
         break;
@@ -243,7 +255,7 @@ static int math_random(lua_State* L)
         int u = luaL_checkinteger(L, 1);
         luaL_argcheck(L, 1 <= u, 1, "interval is empty");
 
-        uint64_t x = uint64_t(u) * pcg32_random(&g->rngstate);
+        uint64_t x = uint64_t(u) * (randomProvider ? randomProvider(L) : pcg32_random(&g->rngstate));
         int r = int(1 + (x >> 32));
         lua_pushinteger(L, r); // int between 1 and `u'
         break;
@@ -256,7 +268,7 @@ static int math_random(lua_State* L)
 
         uint32_t ul = uint32_t(u) - uint32_t(l);
         luaL_argcheck(L, ul < UINT_MAX, 2, "interval is too large"); // -INT_MIN..INT_MAX interval can result in integer overflow
-        uint64_t x = uint64_t(ul + 1) * pcg32_random(&g->rngstate);
+        uint64_t x = uint64_t(ul + 1) * (randomProvider ? randomProvider(L) : pcg32_random(&g->rngstate));
         int r = int(l + (x >> 32));
         lua_pushinteger(L, r); // int between `l' and `u'
         break;
@@ -269,6 +281,17 @@ static int math_random(lua_State* L)
 
 static int math_randomseed(lua_State* L)
 {
+    // ServerLua: We don't support seeding the RNG in this configuration, just ignore.
+    if (LUAU_IS_SL_VM(L))
+    {
+        // TODO: Is explicit warning better? Some Lua scripts try to seed rand
+        //  with `time()` and such manually in an attempt to get more "random" values
+        //  which doesn't really work. We stay silent to not break them, but users
+        //  of this API who genuinely want deterministic behavior may be surprised.
+        auto *runtime_state = LUAU_GET_SL_VM_STATE(L);
+        if (runtime_state->randomProvider)
+            return 0;
+    }
     int seed = luaL_checkinteger(L, 1);
 
     pcg32_seed(&L->global->rngstate, seed);

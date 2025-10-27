@@ -28,6 +28,7 @@ typedef bool (*lua_mayCallHandleEventCallback)(lua_State *L);
 typedef bool (*lua_eventHandlerRegistrationCallback)(lua_State *L, const char *event_name, bool registered);
 typedef void (*lua_setTimerEventCallback)(lua_State *L, double interval);
 typedef double (*lua_getClockCallback)(lua_State *L);
+typedef uint32_t (*lua_randomProvider)(lua_State *L);
 
 // This is meant to be shared between instances of the same script and should
 // NOT have any instance-specific data on it!
@@ -40,6 +41,7 @@ typedef struct lua_SLRuntimeState
     lua_eventHandlerRegistrationCallback eventHandlerRegistrationCb = nullptr;
     lua_setTimerEventCallback setTimerEventCb = nullptr;
     lua_getClockCallback getClockCb = nullptr;
+    lua_randomProvider randomProvider = nullptr;
 } lua_SLRuntimeState;
 
 #define LU_TAG_LSL_INTEGER 100
