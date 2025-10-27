@@ -5,6 +5,11 @@ local expected_key = uuid(expected_str)
 
 assert(key == expected_key)
 assert(tostring(key) == expected_str)
+assert(#expected_key.bytes == 16)
+
+local expected_key_clone = uuid(buffer.fromstring(expected_key.bytes))
+-- This should end up with the same UUID identity because of UUID interning.
+assert(expected_key_clone == expected_key)
 
 -- These two should be equal within tables
 local tab = {}

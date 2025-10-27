@@ -114,13 +114,22 @@ static int push_uuid_common(lua_State *L, const char *str, size_t len, bool comp
 // UUID constructor for Lua/SLua mode (strict + canonicalize)
 static int lua_uuid_ctor(lua_State *L)
 {
-    if (lua_type(L, 1) == LUA_TUSERDATA)
+    auto arg_type = lua_type(L, 1);
+    if (arg_type == LUA_TUSERDATA)
     {
         // If this is already a UUID just return the same UUID.
         bool compressed;
         luaSL_checkuuid(L, 1, &compressed);
         lua_pushvalue(L, 1);
         return 1;
+    }
+    else if (arg_type == LUA_TBUFFER)
+    {
+        size_t buf_len = 0;
+        auto *data = lua_tobuffer(L, 1, &buf_len);
+        if (data && buf_len >= (size_t)UUID_BYTES)
+            return push_uuid_common(L, (const char*)data, UUID_BYTES, true);
+        luaL_errorL(L, "Buffer too short to be UUID, only %d bytes", (int)buf_len);
     }
 
     size_t len;
@@ -1070,6 +1079,20 @@ static int lsl_index_uuid(lua_State *L)
     {
         return lsl_is_key_truthy(L);
     }
+    else if (!strcmp(name, "bytes"))
+    {
+        lua_TValue tv {};
+        if (p->compressed)
+        {
+            setsvalue(L, &tv, p->str);
+        }
+        else
+        {
+            setnilvalue(&tv);
+        }
+        luaA_pushobject(L, &tv);
+        return 1;
+    }
     else
     {
         luaL_error(L, "unknown field %s", name);
@@ -1417,7 +1440,9 @@ int luaopen_sl(lua_State* L)
     {
         lua_pushcfunction(L, lua_uuid_ctor, "uuid");
     }
+    lua_pushvalue(L, -1);
     lua_setglobal(L, "uuid");
+    lua_setglobal(L, "touuid");
 
     lua_pushcfunction(L, lsl_to_vector, "tovector");
     lua_setglobal(L, "tovector");
