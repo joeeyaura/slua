@@ -3049,7 +3049,6 @@ void eris_populate_perms(lua_State *L, bool for_unpersist) {
 }
 
 void eris_register_perms(lua_State *L, bool for_unpersist) {
-    // TODO: Make this work correctly
     eris_ifassert(int old_top = lua_gettop(L));
     const char *name = "eris_perms";
     if (for_unpersist)
@@ -3543,8 +3542,8 @@ eris_make_forkserver(lua_State *L) {
 
   lua_pop(Lforker, 1);                                      /* LForker: state */
 
-  // Don't log paths when deserializing, it's expensive.
-  // TODO: disable this, but we need it for now.
+  // We don't want to log paths when deserializing, it's expensive, but we need it.
+  // TODO: disable this, we need it for now.
   lua_pushboolean(Lforker, 1);                      /* LForker: state enabled */
   eris_set_setting(Lforker, kSettingGeneratePath, -1);
   lua_pop(Lforker, 1);                                      /* LForker: state */

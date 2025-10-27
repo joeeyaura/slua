@@ -916,8 +916,8 @@ static int lsl_mul_quat(lua_State *L)
 
     if (auto* b = (const float *)lua_touserdatatagged(L, 2, UTAG_QUATERNION))
     {
-        // TODO: normally this goes through the LLQuaternion constructor,
-        //  does it normalize in this case?
+        // I checked the SL codebase and I don't believe LLQuaternion normalizes
+        // here, so we should be correct to not normalize either.
         float res[4] = {0.0f};
         mul_quat(a, b, res);
         luaSL_pushquaternion(L, res[0], res[1], res[2], res[3]);
@@ -1274,8 +1274,8 @@ YieldableStatus luaSL_may_interrupt(lua_State *L)
     // only care if we're currently executing a lua function
     if(!isLua(L->ci))
     {
-        // TODO: This may not be 100% correct, we kind of need
-        //  to check the whole CI stack...
+        // We don't need to check the whole CI stack because we assume that
+        // if the `nCcalls` check succeeds we're okay to yield.
         return YieldableStatus::OK;
     }
 

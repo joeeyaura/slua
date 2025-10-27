@@ -822,7 +822,8 @@ bool LuauVisitor::visit(LSLBoolConversionExpression *bool_expr)
     auto *child_expr = bool_expr->getChildExpr();
     if (child_expr->getIType() == LST_INTEGER)
     {
-        // TODO: can / should we do this for float as well?
+        // We can't do this for float as well because in Luau
+        // 0.0 is a truthy value. Only `nil` and `false` are falsy.
         child_expr->visit(this);
         return false;
     }
@@ -920,7 +921,7 @@ bool LuauVisitor::visit(LSLListExpression *list_expr)
     for (auto *expr : *list_expr)
     {
         // TODO: do setlist in batches so we don't have a bunch of
-        //  unnecessary SetTables
+        //  unnecessary SetTables?
         // RegScope per iteration because constructing the value may create
         // temporaries that we can get rid of after the element is assigned!
         [[maybe_unused]] RegScope scope(this);
@@ -1425,8 +1426,6 @@ bool LuauVisitor::visit(LSLBinaryExpression* bin_expr)
     LuauOpcode luau_op = LOP_NOP;
     switch (op)
     {
-        // TODO: May be opportunities for SUBK, SUBRK, etc depending on how low of
-        //  a constant value we're able to get.
         case '+': luau_op = LOP_ADD; break;
         case '-': luau_op = LOP_SUB; break;
         case '*': luau_op = LOP_MUL; break;

@@ -211,7 +211,7 @@ static void luau_execute(lua_State* L)
 {
 #if VM_USE_CGOTO
     static const void* kDispatchTable[256] = {VM_DISPATCH_TABLE()};
-    // TODO: This is janky, we'd like this in the static dispatch table,
+    // TODO: ServerLua: This is janky, we'd like this in the static dispatch table,
     //  but since the bytecode indices aren't contiguous we need to get a little crafty.
     //  Can we do this in a constexpr or something?
     //  I get the sense that in some cases this might force dispatch on the array in memory...

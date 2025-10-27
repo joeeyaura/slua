@@ -330,7 +330,6 @@ static size_t calcgcosize(GCObject *obj)
     case LUA_TUSERDATA:
     {
         const Udata *udata = gco2u(obj);
-        // TODO: specific sizes for each kind of userdata!
         switch (udata->tag)
         {
         case UTAG_UUID:

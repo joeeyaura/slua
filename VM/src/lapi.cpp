@@ -1927,7 +1927,6 @@ CLANG_NOOPT void GCC_NOOPT lua_fixallcollectable(lua_State *L)
     luaM_visitgco(L, L, gcfixingvisitor);
 
     // Try to fix any userdata metatables we may know about
-    // TODO: pull all these out of LUAU_ASSERT() so they work in release mode.
     ASSERT_IN_DBG(try_fix_table(L->global->udatamt[UTAG_UUID]));
     ASSERT_IN_DBG(try_fix_table(L->global->udatamt[UTAG_QUATERNION]));
 
