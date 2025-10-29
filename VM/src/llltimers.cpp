@@ -228,7 +228,13 @@ static void schedule_next_tick(lua_State *L)
     // Get current time
     uint64_t current_time_us = sl_state->clockProvider ? sl_state->clockProvider(L) : 0;
 
-    // Timer events are relative, but our stored times are absolute
+    // Timer events are relative, but our stored times are absolute.
+    // See how many usec until we'll need to run our next timer,
+    // If it should have already ran (maybe because of a long, blocking handler)
+    // Just schedule a re-invocation for 1 usec from now.
+    // This is preferable to just looping back from the start within the continuation
+    // because it prevents timers from accidentally blocking the ability for the
+    // host's event manager to process other events between timers.
     uint64_t next_interval_us = (min_time_us <= current_time_us) ? 1 : (min_time_us - current_time_us);
     sl_state->setTimerEventCb(L, next_interval_us);
 }
@@ -380,6 +386,9 @@ static int lltimers_tick_cont(lua_State *L, [[maybe_unused]]int status)
         else
         {
             // Schedule its next run
+            // Note that we do this BEFORE the timer is ever run.
+            // This ensures that handler runtime has no effect on
+            // When the handler will be invoked next.
             lua_pushnumber(L, (double)(start_time_us + interval_us));
             lua_rawseti(L, CURRENT_TIMER, TIMER_NEXT_RUN);
         }
@@ -425,11 +434,6 @@ static int lltimers_tick_cont(lua_State *L, [[maybe_unused]]int status)
 
     // Done processing all timers, schedule the next tick
     schedule_next_tick(L);
-
-    // Clean up stack
-    lua_settop(L, 1); // Keep only lltimers userdata
-
-    LUAU_ASSERT(lua_gettop(L) == LLTIMERS_USERDATA);
 
     return 0;
 }
