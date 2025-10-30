@@ -234,12 +234,4 @@ assert_errors(
     "Event handler defined with ':' syntax; use '.'"
 )
 
--- Run this last, check that we can block handle event calls
-set_may_call_handle_event(false)
-LLEvents:on('listen', function() assert(false) end)
-assert_errors(
-    function() LLEvents:_handleEvent("listen", 0, "test", "key", "msg") end,
-    "Not allowed to call LLEvents:_handleEvent()"
-)
-
 return 'OK'

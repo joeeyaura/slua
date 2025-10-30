@@ -1420,7 +1420,7 @@ static void make_weak_uuid_table(lua_State *L)
     lua_setmetatable(L, -2);
 }
 
-int luaopen_sl(lua_State* L)
+int luaopen_sl(lua_State* L, int expose_internal_funcs)
 {
     if (!LUAU_IS_SL_VM(L))
     {
@@ -1564,14 +1564,14 @@ int luaopen_sl(lua_State* L)
     /// LLEvents
     //////
 
-    luaSL_setup_llevents_metatable(L);
+    luaSL_setup_llevents_metatable(L, expose_internal_funcs);
     LUAU_ASSERT(lua_gettop(L) == top);
 
     //////
     /// LLTimers
     //////
 
-    luaSL_setup_llltimers_metatable(L);
+    luaSL_setup_llltimers_metatable(L, expose_internal_funcs);
     LUAU_ASSERT(lua_gettop(L) == top);
 
     // return "integer" when we call type() on an int

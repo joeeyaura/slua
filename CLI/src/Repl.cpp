@@ -245,7 +245,7 @@ void setupState(lua_State* L)
         if (sl)
             lsl_state.slIdentifier = LUA_SL_IDENTIFIER;
 
-        luaopen_sl(L);
+        luaopen_sl(L, true);
         if (lsl)
         {
             luaopen_lsl(L);

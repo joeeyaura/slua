@@ -632,15 +632,6 @@ static int llevents_handle_event_init(lua_State *L)
         return 0;
     }
 
-    auto *sl_state = LUAU_GET_SL_VM_STATE(L);
-    if (sl_state->mayCallHandleEventCb != nullptr && !sl_state->mayCallHandleEventCb(L))
-    {
-        // Not allowed to call `handleEvent()`. This isn't for security reasons or anything,
-        // it's mostly to prevent people from using this for their own home-cooked dispatch stuff
-        // that we don't want to support in internal APIs.
-        luaL_errorL(L, "Not allowed to call LLEvents:_handleEvent()");
-    }
-
     int handlers_len = lua_objlen(L, -1);
 
     // Empty array isn't valid, val should be nil if no handlers.
@@ -698,7 +689,7 @@ static int llevents_handle_event_init(lua_State *L)
     return llevents_handle_event_cont(L, LUA_OK);
 }
 
-void luaSL_setup_llevents_metatable(lua_State *L)
+void luaSL_setup_llevents_metatable(lua_State *L, int expose_internal_funcs)
 {
     // Set up destructor for LLEvents
     lua_setuserdatadtor(L, UTAG_LLEVENTS, llevents_dtor);
@@ -733,9 +724,11 @@ void luaSL_setup_llevents_metatable(lua_State *L)
     lua_pushcfunction(L, llevents_eventnames, "eventNames");
     lua_setfield(L, -2, "eventNames");
 
-    // This isn't part of the public API, so it's _ prefixed.
-    lua_pushcclosurek(L, llevents_handle_event_init, "_handleEvent", 0, llevents_handle_event_cont);
-    lua_setfield(L, -2, "_handleEvent");
+    if (expose_internal_funcs)
+    {
+        lua_pushcclosurek(L, llevents_handle_event_init, "_handleEvent", 0, llevents_handle_event_cont);
+        lua_setfield(L, -2, "_handleEvent");
+    }
 
     // give it a proper name for `typeof()`
     lua_pushstring(L, "LLEvents");

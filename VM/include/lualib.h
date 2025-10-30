@@ -148,7 +148,7 @@ LUALIB_API int luaopen_eris(lua_State *L);
 #define LUA_LSLLIBNAME "lsl"
 LUALIB_API int luaopen_lsl(lua_State* L);
 
-LUALIB_API int luaopen_sl(lua_State* L);
+LUALIB_API int luaopen_sl(lua_State* L, int expose_internal_funcs);
 
 #define LUA_LLBASE64LIBNAME "llbase64"
 LUALIB_API int luaopen_llbase64(lua_State* L);

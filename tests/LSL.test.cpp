@@ -115,7 +115,7 @@ static StateRef runConformance(const char* name, int32_t (*yield)(lua_State* L) 
     L->userdata = runtime_state;
 
     luaL_openlibs(L);
-    luaopen_sl(L);
+    luaopen_sl(L, true);
     luaopen_lsl(L);
     lua_pop(L, 1);
     luaopen_ll(L, true);
@@ -877,7 +877,7 @@ void runAresYieldTest(const std::string &name)
     lua_callbacks(GL)->userthread = userthread_callback;
 
     luaL_openlibs(GL);
-    luaopen_sl(GL);
+    luaopen_sl(GL, true);
     luaopen_lsl(GL);
     lua_pop(GL, 1);
     luaopen_ll(GL, true);

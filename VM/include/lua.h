@@ -24,7 +24,6 @@
 
 struct lua_State;
 
-typedef bool (*lua_mayCallHandleEventCallback)(lua_State *L);
 typedef bool (*lua_eventHandlerRegistrationCallback)(lua_State *L, const char *event_name, bool registered);
 typedef void (*lua_setTimerEventCallback)(lua_State *L, double interval);
 // Clock provider should return monotonic stopwatch time in seconds.
@@ -39,7 +38,6 @@ typedef struct lua_SLRuntimeState
     unsigned int slIdentifier = LUA_LSL_IDENTIFIER;
     int uuidWeakTab = -1;
     int uuidCompressedWeakTab = -1;
-    lua_mayCallHandleEventCallback mayCallHandleEventCb = nullptr;
     lua_eventHandlerRegistrationCallback eventHandlerRegistrationCb = nullptr;
     lua_setTimerEventCallback setTimerEventCb = nullptr;
     // stopwatch timer
@@ -519,6 +517,9 @@ static void populateperms(lua_State *L, bool forUnpersist)
 #if defined(eris_c) || defined(lllevents_c)
     eris_persist_static_cont(llevents, llevents_handle_event_init, llevents_handle_event_cont)
     eris_persist_static_cont(llevents, llevents_once_wrapper, llevents_once_wrapper_cont)
+#endif
+#if defined(eris_c) || defined(llltimers_c)
+    eris_persist_static_cont(llltimers, lltimers_tick_init, lltimers_tick_cont)
 #endif
 #if defined(eris_c)
 }

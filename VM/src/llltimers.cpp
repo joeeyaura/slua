@@ -477,7 +477,7 @@ static int lltimers_tostring(lua_State *L)
     return 1;
 }
 
-void luaSL_setup_llltimers_metatable(lua_State *L)
+void luaSL_setup_llltimers_metatable(lua_State *L, int expose_internal_funcs)
 {
     // Set up destructor for LLTimers
     lua_setuserdatadtor(L, UTAG_LLTIMERS, lltimers_dtor);
@@ -506,8 +506,11 @@ void luaSL_setup_llltimers_metatable(lua_State *L)
     lua_pushcfunction(L, lltimers_off, "off");
     lua_setfield(L, -2, "off");
 
-    lua_pushcclosurek(L, lltimers_tick_init, "_tick", 0, lltimers_tick_cont);
-    lua_setfield(L, -2, "_tick");
+    if (expose_internal_funcs)
+    {
+        lua_pushcclosurek(L, lltimers_tick_init, "_tick", 0, lltimers_tick_cont);
+        lua_setfield(L, -2, "_tick");
+    }
 
     // Give it a proper name for `typeof()`
     lua_pushstring(L, "LLTimers");

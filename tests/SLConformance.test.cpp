@@ -207,7 +207,7 @@ static StateRef runConformance(const char* name, void (*yield)(lua_State* L) = n
     GL->userdata = runtime_state;
 
     luaL_openlibs(GL);
-    luaopen_sl(GL);
+    luaopen_sl(GL, true);
     luaopen_ll(GL, true);
     lua_pop(GL, 1);
     luaopen_cjson(GL);
@@ -584,17 +584,11 @@ TEST_CASE("SL Ares")
     runConformance("sl_ares.lua");
 }
 
-static bool may_call_handle_event = true;
 TEST_CASE("LLEvents")
 {
     runConformance("llevents.lua", nullptr, [](lua_State *L) {
         lua_pushcfunction(L, lua_break, "breaker");
         lua_setglobal(L, "breaker");
-        lua_pushcfunction(L, [](lua_State *L) {
-            may_call_handle_event = lua_toboolean(L, 1);
-            return 0;
-        }, "set_may_call_handle_event");
-        lua_setglobal(L, "set_may_call_handle_event");
         auto sl_state = LUAU_GET_SL_VM_STATE(L);
         sl_state->eventHandlerRegistrationCb = [](lua_State *L, const char *event_name, bool enabled) {
             if (!strcmp(event_name, "disallowed"))
@@ -604,7 +598,6 @@ TEST_CASE("LLEvents")
             }
             return true;
         };
-        sl_state->mayCallHandleEventCb = [](lua_State *L) { return may_call_handle_event; };
     });
 }
 
@@ -662,9 +655,6 @@ TEST_CASE("LLEvents and LLTimers interrupt between handlers")
             auto sl_state = LUAU_GET_SL_VM_STATE(L);
             sl_state->eventHandlerRegistrationCb = [](lua_State *L, const char *event_name, bool enabled) {
                 return true; // Allow all events for this test
-            };
-            sl_state->mayCallHandleEventCb = [](lua_State *L) {
-                return true; // Allow calling handleEvent
             };
             sl_state->performanceClockProvider = sl_state->clockProvider = [](lua_State *L) {
                 return test_time;
