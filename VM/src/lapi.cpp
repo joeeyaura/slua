@@ -370,6 +370,17 @@ int lua_isuserdata(lua_State* L, int idx)
     return (ttisuserdata(o) || ttislightuserdata(o));
 }
 
+int lua_iscallable(lua_State* L, int idx)
+{
+    const TValue* o = index2addr(L, idx);
+    // Check if it's a function
+    if (ttisfunction(o))
+        return 1;
+    // Check if it has a __call metamethod
+    const TValue* tm = luaT_gettmbyobj(L, o, TM_CALL);
+    return !ttisnil(tm);
+}
+
 int lua_rawequal(lua_State* L, int index1, int index2)
 {
     StkId o1 = index2addr(L, index1);

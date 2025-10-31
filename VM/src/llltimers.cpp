@@ -116,7 +116,8 @@ static int lltimers_on(lua_State *L)
         luaL_typeerror(L, 1, "LLTimers");
 
     double seconds = luaL_checknumber(L, 2);
-    luaL_checktype(L, 3, LUA_TFUNCTION);
+    if (!lua_iscallable(L, 3))
+        luaL_typeerror(L, 3, "function or callable table");
     lua_settop(L, 3);
 
     if (seconds <= 0.0)
@@ -163,7 +164,8 @@ static int lltimers_once(lua_State *L)
         luaL_typeerror(L, 1, "LLTimers");
 
     double seconds = luaL_checknumber(L, 2);
-    luaL_checktype(L, 3, LUA_TFUNCTION);
+    if (!lua_iscallable(L, 3))
+        luaL_typeerror(L, 3, "function or callable table");
     lua_settop(L, 3);
 
     if (seconds <= 0.0)
@@ -205,7 +207,8 @@ static int lltimers_off(lua_State *L)
     if (!lltimers)
         luaL_typeerror(L, 1, "LLTimers");
 
-    luaL_checktype(L, 2, LUA_TFUNCTION);
+    if (!lua_iscallable(L, 2))
+        luaL_typeerror(L, 2, "function or callable table");
     lua_settop(L, 2);
 
     // Get the timers array
@@ -243,6 +246,12 @@ static int lltimers_off(lua_State *L)
     }
 
     lua_pop(L, 1); // Pop timers array
+
+    // Check if we just removed the last timer
+    if (found && len == 1)
+    {
+        unregister_timer_wrapper(L, lltimers);
+    }
 
     lua_pushboolean(L, found);
     return 1;
@@ -545,8 +554,8 @@ static int lltimers_tick_cont(lua_State *L, [[maybe_unused]]int status)
         lua_rawgeti(L, CURRENT_TIMER, TIMER_HANDLER); // Get handler
         lua_replace(L, HANDLER_FUNC); // Store handler in its own slot
 
-        // Verify we got a function
-        LUAU_ASSERT(lua_type(L, HANDLER_FUNC) == LUA_TFUNCTION);
+        // Verify we got a callable
+        LUAU_ASSERT(lua_iscallable(L, HANDLER_FUNC));
 
         // Update timer_index for continuation
         lua_pushinteger(L, timer_index + 1);

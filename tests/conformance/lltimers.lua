@@ -190,7 +190,7 @@ local breaker_timer3 = LLTimers:on(0.01, function()
 end)
 
 setclock(2.1) -- All timers should fire
-LLTimers:_tick()
+LLEvents:_handleEvent('timer')
 
 assert(lljson.encode(breaker_call_order) == "[1,2,3,4]")
 
@@ -222,7 +222,7 @@ end)
 
 setclock(3.1) -- All timers should fire
 
-local tick_coro = coroutine.create(function() LLTimers:_tick() end)
+local tick_coro = coroutine.create(function() LLEvents:_handleEvent('timer') end)
 
 while true do
     local co_status, yielded_val = coroutine.resume(tick_coro)
@@ -237,6 +237,7 @@ assert(lljson.encode(yield_order) == "[1,2,3]")
 
 -- Clean up
 LLTimers:off(yield_timer1)
+LLTimers:off(yield_timer2)
 LLTimers:off(yield_timer3)
 
 -- Test reentrancy detection
@@ -251,5 +252,95 @@ assert_errors(
     function() LLTimers:_tick() end,
     "Recursive call to LLTimers:_tick%(%) detected"
 )
+
+-- Clean up
+LLTimers:off(reentrant_handler)
+
+-- Test automatic registration with LLEvents when first timer is added
+setclock(4.0)
+assert(#LLEvents:listeners("timer") == 0)
+
+local auto_reg_timer1 = LLTimers:on(1.0, function() end)
+assert(#LLEvents:listeners("timer") == 1)
+
+-- Adding second timer should not add another listener
+local auto_reg_timer2 = LLTimers:on(2.0, function() end)
+assert(#LLEvents:listeners("timer") == 1)
+
+-- Removing first timer should keep listener (still have timer2)
+LLTimers:off(auto_reg_timer1)
+assert(#LLEvents:listeners("timer") == 1)
+
+-- Removing last timer should auto-deregister
+LLTimers:off(auto_reg_timer2)
+assert(#LLEvents:listeners("timer") == 0)
+
+-- Test that timer wrapper in listeners() cannot be called directly
+local guard_timer = LLTimers:on(1.0, function() end)
+local timer_listeners = LLEvents:listeners("timer")
+assert(#timer_listeners == 1)
+
+local guard_func = timer_listeners[1]
+assert_errors(function()
+    guard_func()
+end, "Cannot call internal timer wrapper directly")
+
+-- Verify guard function exists
+assert(guard_func ~= nil)
+
+-- Clean up
+LLTimers:off(guard_timer)
+
+-- Test that LLEvents:_handleEvent('timer') drives LLTimers:_tick()
+setclock(5.0)
+local integration_count = 0
+local integration_timer = LLTimers:on(0.5, function()
+    integration_count += 1
+end)
+
+-- Manually trigger timer event via LLEvents (no arguments)
+setclock(5.6)
+LLEvents:_handleEvent('timer')
+assert(integration_count == 1)
+
+-- Trigger again
+incrementclock(0.5)
+LLEvents:_handleEvent('timer')
+assert(integration_count == 2)
+
+-- Clean up
+LLTimers:off(integration_timer)
+
+-- Test callable tables (tables with __call metamethod) as timer handlers
+setclock(6.0)
+local callable_count = 0
+local callable_table = setmetatable({}, {
+    __call = function(self)
+        callable_count += 1
+    end
+})
+
+-- Register callable table as timer handler
+local callable_timer = LLTimers:on(0.3, callable_table)
+assert(callable_timer ~= nil)
+
+-- Advance time and trigger timer
+setclock(6.4)
+LLEvents:_handleEvent('timer')
+assert(callable_count == 1)
+
+-- Trigger again
+incrementclock(0.3)
+LLEvents:_handleEvent('timer')
+assert(callable_count == 2)
+
+-- Test unregistering by passing the same table reference
+local off_result = LLTimers:off(callable_table)
+assert(off_result == true)
+
+-- Verify timer no longer fires
+incrementclock(0.3)
+LLEvents:_handleEvent('timer')
+assert(callable_count == 2)
 
 return "OK"

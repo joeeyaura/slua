@@ -234,4 +234,62 @@ assert_errors(
     "Event handler defined with ':' syntax; use '.'"
 )
 
+-- Test callable tables (tables with __call metamethod) as event handlers
+local callable_count = 0
+-- Need to pre-declare this so the `__call` function can close over it
+local callable_table = nil
+callable_table = setmetatable({}, {
+    __call = function(self, ...)
+        callable_count += 1
+        -- The first arg should be `self` even though we don't explicitly
+        -- set that up before we `lua_call()`
+        assert(self == callable_table)
+    end
+})
+
+-- Register callable table as event handler
+local callable_handler = LLEvents:on("touch_start", callable_table)
+assert(callable_handler ~= nil)
+assert(#LLEvents:listeners("touch_start") == 1)
+
+-- Trigger event
+LLEvents:_handleEvent("touch_start", 2)
+assert(callable_count == 1)
+
+-- Trigger again
+LLEvents:_handleEvent("touch_start", 2)
+assert(callable_count == 2)
+
+-- Test unregistering by passing the same table reference
+local off_result = LLEvents:off("touch_start", callable_table)
+assert(off_result == true)
+assert(#LLEvents:listeners("touch_start") == 0)
+
+-- Verify handler no longer fires
+LLEvents:_handleEvent("touch_start", 2)
+assert(callable_count == 2)
+
+-- Test callable table with yields in __call metamethod
+local yield_order = {}
+local callable_yield_table = setmetatable({}, {
+    __call = function(self, detected)
+        coroutine.yield(1)
+        coroutine.yield(2)
+    end
+})
+
+LLEvents:on("touch_start", callable_yield_table)
+
+local callable_coro = coroutine.create(function() LLEvents:_handleEvent("touch_start", 2) end)
+
+while true do
+    local co_status, yielded_val = coroutine.resume(callable_coro)
+    if not co_status then
+        break
+    end
+    table.insert(yield_order, yielded_val)
+end
+
+assert(lljson.encode(yield_order) == "[1,2]")
+
 return 'OK'

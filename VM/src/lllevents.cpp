@@ -218,7 +218,8 @@ static int llevents_newindex(lua_State *L)
         luaL_typeerror(L, 1, "LLEvents");
 
     luaL_checktype(L, 2, LUA_TSTRING);
-    luaL_checktype(L, 3, LUA_TFUNCTION);
+    if (!lua_iscallable(L, 3))
+        luaL_typeerror(L, 3, "function or callable table");
 
     // Check if handler was defined with : syntax
     if (luaSL_ismethodstyle(L, 3))
@@ -243,7 +244,8 @@ static int llevents_on(lua_State *L)
         luaL_typeerror(L, 1, "LLEvents");
 
     const char *event_name = luaL_checkstring(L, 2);
-    luaL_checktype(L, 3, LUA_TFUNCTION);
+    if (!lua_iscallable(L, 3))
+        luaL_typeerror(L, 3, "function or callable table");
     lua_settop(L, 3);
 
     // Get the listeners table
@@ -293,7 +295,8 @@ static int llevents_off(lua_State *L)
         luaL_typeerror(L, 1, "LLEvents");
 
     const char *event_name = luaL_checkstring(L, 2);
-    luaL_checktype(L, 3, LUA_TFUNCTION);
+    if (!lua_iscallable(L, 3))
+        luaL_typeerror(L, 3, "function or callable table");
     lua_settop(L, 3);
 
 
@@ -406,7 +409,8 @@ static int llevents_once(lua_State *L)
         luaL_typeerror(L, 1, "LLEvents");
 
     luaL_checkstring(L, 2);
-    luaL_checktype(L, 3, LUA_TFUNCTION);
+    if (!lua_iscallable(L, 3))
+        luaL_typeerror(L, 3, "function or callable table");
     lua_settop(L, 3);
 
     // Create wrapper function with upvalues
@@ -582,7 +586,7 @@ int llevents_handle_event_cont(lua_State *L, int status)
         // Unwrap to get the actual handler function
         lua_rawgeti(L, -1, 1); // Get wrapper[1]
         lua_remove(L, -2); // Remove the wrapper table
-        LUAU_ASSERT(lua_type(L, -1) == LUA_TFUNCTION);
+        LUAU_ASSERT(lua_iscallable(L, -1));
 
         // Push arguments for this handler call
         for (int j = 0; j < nargs; j++)
