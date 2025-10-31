@@ -258,6 +258,7 @@ static StateRef runConformance(const char* name, void (*yield)(lua_State* L) = n
     luaL_sandboxthread(L);
 
     luaSL_createeventmanager(L);
+    lua_pushvalue(L, -1);
     lua_setglobal(L, "LLEvents");
 
     luaSL_createtimermanager(L);

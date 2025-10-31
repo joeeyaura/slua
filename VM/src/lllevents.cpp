@@ -6,10 +6,18 @@
 #include "lualib.h"
 #include "llsl.h"
 #include "lllevents.h"
+#include "llltimers.h"
 
 #include "lobject.h"
 #include "lstate.h"
 #include "lapi.h"
+
+// Guard function to prevent direct calls to internal timer wrapper
+int timer_wrapper_guard(lua_State *L)
+{
+    luaL_errorL(L, "Cannot call internal timer wrapper directly");
+    return 0;
+}
 
 int luaSL_pushdetectedevent(lua_State *L, int index, bool valid, bool can_change_damage)
 {
@@ -177,6 +185,7 @@ int luaSL_createeventmanager(lua_State *L)
 {
     lua_checkstack(L, 2);
     auto *llevents = (lua_LLEvents *)lua_newuserdatataggedwithmetatable(L, sizeof(lua_LLEvents), UTAG_LLEVENTS);
+    llevents->listeners_tab_ref = -1;  // Initialize before allocations
 
     // Create empty listeners table
     lua_createtable(L, 0, 0);
@@ -445,8 +454,22 @@ static int llevents_listeners(lua_State *L)
     {
         lua_rawgeti(L, -1, i); // Get wrapper table
         lua_rawgeti(L, -1, 1); // Get wrapper[1] (the actual handler)
-        lua_rawseti(L, -3, i); // Set it back in the cloned array
-        lua_pop(L, 1); // Pop the wrapper
+
+        // Check if this is the internal timer wrapper - replace with guard
+        // We _really_ don't want people fiddling with this handler, or even calling
+        // it manually. This only serves as an indication to you that _something_ is
+        // registered to the `timer` event, but you can't unregister it :)
+        const TValue* handler = luaA_toobject(L, -1);
+        if (iscfunction(handler) && clvalue(handler)->c.f == timer_event_wrapper)
+        {
+            // Replace with guard function from registry
+            lua_pop(L, 1);
+            lua_getfield(L, LUA_REGISTRYINDEX, "LLEVENTS_TIMER_WRAPPER_GUARD");
+        }
+
+        // Set it back in the cloned array
+        lua_rawseti(L, -3, i);
+        lua_pop(L, 1);
     }
 
     return 1;
@@ -723,6 +746,14 @@ void luaSL_setup_llevents_metatable(lua_State *L, int expose_internal_funcs)
 
     lua_pushcfunction(L, llevents_eventnames, "eventNames");
     lua_setfield(L, -2, "eventNames");
+
+    // Store _handleEvent in registry for host access
+    lua_pushcclosurek(L, llevents_handle_event_init, "_handleEvent", 0, llevents_handle_event_cont);
+    lua_setfield(L, LUA_REGISTRYINDEX, "LLEVENTS_HANDLEEVENT");
+
+    // Store timer wrapper guard in registry for listeners() protection
+    lua_pushcfunction(L, timer_wrapper_guard, "timer_wrapper_guard");
+    lua_setfield(L, LUA_REGISTRYINDEX, "LLEVENTS_TIMER_WRAPPER_GUARD");
 
     if (expose_internal_funcs)
     {

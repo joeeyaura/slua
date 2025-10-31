@@ -468,7 +468,7 @@ LUA_API void lua_unref(lua_State* L, int ref);
 
 #if defined(eris_c)
 /* Utility macro for populating the perms table with internal C functions. */
-#define eris_persist_static(lib, fn) eris_persist_static_cont(lib, fn, doesntmatter)
+# define eris_persist_static(lib, fn) eris_persist_static_cont(lib, fn, doesntmatter)
 # define eris_persist_static_cont(lib, fn, cont)\
     extern lua_CFunction __perm_##lib##_##fn;   \
     extern lua_Continuation __perm_##lib##_##fn##_cont; \
@@ -482,17 +482,27 @@ LUA_API void lua_unref(lua_State* L, int ref);
       lua_pushstring(L, "__eris." #lib "_" #fn);\
     }\
     lua_rawset(L, -3);
+
+// Can just use the same wrapper here.
+# define eris_persist_cont(lib, fn, cont) eris_persist_static_cont(lib, fn, cont)
 #else
-/* Utility macro to export internal C functions to eris. */
-# define eris_persist_static(lib, fn)\
-    static int fn (lua_State *L);          \
+/* Base macros for exporting C functions to eris with configurable linkage. */
+# define eris_persist_base(lib, fn, prefix)\
+    prefix int fn (lua_State *L);          \
     lua_CFunction __perm_##lib##_##fn = fn;     \
     lua_Continuation __perm_##lib##_##fn##_cont = nullptr;
-# define eris_persist_static_cont(lib, fn, cont)\
-    static int fn (lua_State *L);          \
-    static int cont (lua_State *L, int idx);\
+# define eris_persist_base_cont(lib, fn, cont, prefix)\
+    prefix int fn (lua_State *L);          \
+    prefix int cont (lua_State *L, int idx);\
     lua_CFunction __perm_##lib##_##fn = fn;     \
     lua_Continuation __perm_##lib##_##fn##_cont = cont;
+
+/* Static linkage macros (for internal-only functions). */
+# define eris_persist_static(lib, fn) eris_persist_base(lib, fn, static)
+# define eris_persist_static_cont(lib, fn, cont) eris_persist_base_cont(lib, fn, cont, static)
+
+/* External linkage macros (for functions that need to be referenced across compilation units). */
+# define eris_persist_cont(lib, fn, cont) eris_persist_base_cont(lib, fn, cont, )
 #endif
 
 #if defined(eris_c)
@@ -517,9 +527,11 @@ static void populateperms(lua_State *L, bool forUnpersist)
 #if defined(eris_c) || defined(lllevents_c)
     eris_persist_static_cont(llevents, llevents_handle_event_init, llevents_handle_event_cont)
     eris_persist_static_cont(llevents, llevents_once_wrapper, llevents_once_wrapper_cont)
+    eris_persist_static(llevents, timer_wrapper_guard)
 #endif
 #if defined(eris_c) || defined(llltimers_c)
     eris_persist_static_cont(llltimers, lltimers_tick_init, lltimers_tick_cont)
+    eris_persist_cont(llltimers, timer_event_wrapper, timer_event_wrapper_cont)
 #endif
 #if defined(eris_c)
 }
@@ -527,6 +539,9 @@ static void populateperms(lua_State *L, bool forUnpersist)
 
 #undef eris_persist_static
 #undef eris_persist_static_cont
+#undef eris_persist_base
+#undef eris_persist_base_cont
+#undef eris_persist_cont
 
 LUA_API lua_State *eris_make_forkserver(lua_State *Lsrc);
 

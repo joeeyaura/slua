@@ -59,6 +59,10 @@ typedef struct lua_LLTimers {
     int timers_tab_ref;
     // Having an actual pointer is valuable for quick traversal.
     LuaTable * timers_tab;
+    // Reference to LLEvents instance for timer integration
+    int llevents_ref;
+    // Reference to timer wrapper closure for event system integration
+    int timer_wrapper_ref;
 } lua_LLTimers;
 
 LUA_API int luaSL_pushuuidlstring(lua_State *L, const char *str, size_t len);

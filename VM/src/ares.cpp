@@ -220,6 +220,15 @@ typedef uint64_t ares_size_t;
     } \
   } while(0)
 
+/* Validates that unpersisted userdata has the expected tag. Raises an error on mismatch. */
+#define eris_checkuserdatatag(info, idx, expected_tag) \
+  do { \
+    if (lua_userdatatag((info)->L, (idx)) != (expected_tag)) { \
+      eris_error((info), "malformed data: expected userdata tag %d, got %d", \
+                 (int)(expected_tag), (int)lua_userdatatag((info)->L, (idx))); \
+    } \
+  } while(0)
+
 /* Used for internal consistency checks, for debugging. These are true asserts
  * in the sense that they should never fire, even for bad inputs. */
 #if !defined(NDEBUG) || defined(LUAU_ENABLE_ASSERT)
@@ -1314,6 +1323,14 @@ static void p_userdata(Info *info) {                               /* ... udata 
                                                           /* ... udata timers */
         persist(info);
         lua_pop(info->L, 1);                                     /* ... udata */
+        lua_getref(info->L, lltimers->llevents_ref);
+                                                        /* ... udata llevents */
+        persist(info);
+        lua_pop(info->L, 1);                                     /* ... udata */
+        lua_getref(info->L, lltimers->timer_wrapper_ref);
+                                                         /* ... udata wrapper */
+        persist(info);
+        lua_pop(info->L, 1);                                     /* ... udata */
         break;
     }
     default:
@@ -1422,6 +1439,16 @@ static void u_userdata(Info *info) {                                   /* ... */
           LuaTable *timers_tab = hvalue(luaA_toobject(info->L, -1));
           lua_pop(info->L, 1);                                         /* ... */
 
+          unpersist(info);                                   /* ... llevents */
+          eris_checkuserdatatag(info, -1, UTAG_LLEVENTS);
+          int llevents_ref = lua_ref(info->L, -1);
+          lua_pop(info->L, 1);                                         /* ... */
+
+          unpersist(info);                              /* ... timer_wrapper */
+          eris_checktype(info, -1, LUA_TFUNCTION);
+          int timer_wrapper_ref = lua_ref(info->L, -1);
+          lua_pop(info->L, 1);                                         /* ... */
+
           auto *lltimers = (lua_LLTimers*)lua_newuserdatataggedwithmetatable(
               info->L,
               sizeof(lua_LLTimers),
@@ -1430,6 +1457,8 @@ static void u_userdata(Info *info) {                                   /* ... */
                                                               /* ... lltimers */
           lltimers->timers_tab_ref = tab_ref;
           lltimers->timers_tab = timers_tab;
+          lltimers->llevents_ref = llevents_ref;
+          lltimers->timer_wrapper_ref = timer_wrapper_ref;
 
           // Manually put the LLTimers in the references table at the correct reference index
           lua_pushvalue(info->L, -1);             /* perms reftbl ... obj obj */

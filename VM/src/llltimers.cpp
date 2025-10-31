@@ -20,25 +20,88 @@ enum TimerDataIndex {
     TIMER_LEN = TIMER_NEXT_RUN,
 };
 
+// Timer event wrapper for LLEvents integration
+int timer_event_wrapper(lua_State *L)
+{
+    // Get _tick function from registry
+    lua_getfield(L, LUA_REGISTRYINDEX, "LLTIMERS_TICK");
+    // Push LLTimers instance from upvalue as self argument
+    lua_pushvalue(L, lua_upvalueindex(1));
+    // Call _tick(LLTimers)
+    lua_call(L, 1, 0);
+    if (L->status == LUA_YIELD || L->status == LUA_BREAK)
+        return -1;
+
+    return 0;
+}
+
+int timer_event_wrapper_cont(lua_State *L, [[maybe_unused]] int status)
+{
+    return 0;
+}
+
+// Forward declarations for timer wrapper management
+static void register_timer_wrapper(lua_State *L, lua_LLTimers *lltimers);
+static void unregister_timer_wrapper(lua_State *L, lua_LLTimers *lltimers);
+
 static void lltimers_dtor(lua_State *L, void *data)
 {
     auto *lltimers = (lua_LLTimers *)data;
+
+    // Just clean up our own references.
+    // Note: During normal operation, unregister_timer_wrapper is called
+    // by schedule_next_tick when the last timer is removed. During GC/shutdown,
+    // we cannot safely access LLEvents as it may already be freed.
+
     if (lltimers->timers_tab_ref != -1)
     {
         lua_unref(L, lltimers->timers_tab_ref);
         lltimers->timers_tab_ref = -1;
     }
+
+    if (lltimers->llevents_ref != -1)
+    {
+        lua_unref(L, lltimers->llevents_ref);
+        lltimers->llevents_ref = -1;
+    }
+
+    if (lltimers->timer_wrapper_ref != -1)
+    {
+        lua_unref(L, lltimers->timer_wrapper_ref);
+        lltimers->timer_wrapper_ref = -1;
+    }
 }
 
 int luaSL_createtimermanager(lua_State *L)
 {
-    lua_checkstack(L, 2);
+    // Validate LLEvents parameter on top of stack
+    if (!lua_touserdatatagged(L, 1, UTAG_LLEVENTS))
+        luaL_typeerror(L, 1, "LLEvents");
+
+    lua_checkstack(L, 3);
+
+    // Store LLEvents reference and remove from stack
+    int llevents_ref = lua_ref(L, 1);
+    lua_pop(L, 1);
+
     auto *lltimers = (lua_LLTimers *)lua_newuserdatataggedwithmetatable(L, sizeof(lua_LLTimers), UTAG_LLTIMERS);
+    lltimers->timers_tab_ref = -1;      // Initialize all refs to -1 before allocations
+    lltimers->llevents_ref = -1;
+    lltimers->timer_wrapper_ref = -1;
 
     // Create empty timers array
     lua_createtable(L, 0, 0);
     lltimers->timers_tab_ref = lua_ref(L, -1);
     lltimers->timers_tab = hvalue(luaA_toobject(L, -1));
+    lua_pop(L, 1);
+
+    // Store LLEvents reference
+    lltimers->llevents_ref = llevents_ref;
+
+    // Create timer wrapper with LLTimers as upvalue
+    lua_pushvalue(L, -1); // Push LLTimers as upvalue
+    lua_pushcclosurek(L, timer_event_wrapper, "timer_wrapper", 1, timer_event_wrapper_cont);
+    lltimers->timer_wrapper_ref = lua_ref(L, -1);
     lua_pop(L, 1);
 
     return 1;
@@ -64,6 +127,7 @@ static int lltimers_on(lua_State *L)
 
     // Get the timers array
     lua_getref(L, lltimers->timers_tab_ref);
+    int old_len = lua_objlen(L, -1);
 
     // Create timer data table
     lua_createtable(L, 3, 0);
@@ -77,9 +141,13 @@ static int lltimers_on(lua_State *L)
     LUAU_ASSERT(lua_objlen(L, -1) == TIMER_LEN);
 
     // Add to the end of the timers array
-    lua_rawseti(L, -2, lua_objlen(L, -2) + 1);
+    lua_rawseti(L, -2, old_len + 1);
 
     lua_pop(L, 1); // Pop timers array
+
+    // Register timer wrapper with LLEvents when adding first timer
+    if (old_len == 0)
+        register_timer_wrapper(L, lltimers);
 
     // Return the passed-in handler so it can be unregistered later
     lua_pushvalue(L, 3);
@@ -106,6 +174,7 @@ static int lltimers_once(lua_State *L)
 
     // Get the timers array
     lua_getref(L, lltimers->timers_tab_ref);
+    int old_len = lua_objlen(L, -1);
 
     // Create timer data table
     lua_createtable(L, 3, 0);
@@ -118,8 +187,12 @@ static int lltimers_once(lua_State *L)
     LUAU_ASSERT(lua_objlen(L, -1) == TIMER_LEN);
 
     // Add to the timers array
-    lua_rawseti(L, -2, lua_objlen(L, -2) + 1);
+    lua_rawseti(L, -2, old_len + 1);
     lua_pop(L, 1); // Pop timers array
+
+    // Register timer wrapper with LLEvents when adding first timer
+    if (old_len == 0)
+        register_timer_wrapper(L, lltimers);
 
     // Return the passed-in handler so it can be unregistered later
     lua_pushvalue(L, 3);
@@ -186,6 +259,50 @@ enum TickStack {
     HANDLER_FUNC = 7           // Handler function to call
 };
 
+// Register timer wrapper with LLEvents when first timer is added
+static void register_timer_wrapper(lua_State *L, lua_LLTimers *lltimers)
+{
+    int top = lua_gettop(L);
+
+    // Get LLEvents instance
+    lua_getref(L, lltimers->llevents_ref);
+
+    // Get the :on() method
+    lua_getuserdatametatable(L, UTAG_LLEVENTS);
+    lua_rawgetfield(L, -1, "on");
+    lua_remove(L, -2); // Remove metatable
+
+    // Call LLEvents:on("timer", wrapper)
+    lua_pushvalue(L, -2); // LLEvents self
+    lua_pushstring(L, "timer");
+    lua_getref(L, lltimers->timer_wrapper_ref); // timer wrapper
+    lua_call(L, 3, 0);
+
+    lua_settop(L, top);
+}
+
+// Unregister timer wrapper from LLEvents when last timer is removed
+static void unregister_timer_wrapper(lua_State *L, lua_LLTimers *lltimers)
+{
+    int top = lua_gettop(L);
+
+    // Get LLEvents instance
+    lua_getref(L, lltimers->llevents_ref);
+
+    // Get the :off() method
+    lua_getuserdatametatable(L, UTAG_LLEVENTS);
+    lua_rawgetfield(L, -1, "off");
+    lua_remove(L, -2); // Remove metatable
+
+    // Call LLEvents:off("timer", wrapper)
+    lua_pushvalue(L, -2); // LLEvents self
+    lua_pushstring(L, "timer");
+    lua_getref(L, lltimers->timer_wrapper_ref); // timer wrapper
+    lua_call(L, 3, 0);
+
+    lua_settop(L, top);
+}
+
 // Helper function to schedule the next timer tick
 // Expects timers_tab to be on the stack at the given index
 static void schedule_next_tick(lua_State *L)
@@ -201,6 +318,11 @@ static void schedule_next_tick(lua_State *L)
     {
         // No timers pending, unsubscribe from the parent timer event
         sl_state->setTimerEventCb(L, 0.0);
+
+        // Unregister timer wrapper from LLEvents
+        auto *lltimers = (lua_LLTimers *)lua_touserdata(L, LLTIMERS_USERDATA);
+        unregister_timer_wrapper(L, lltimers);
+
         return;
     }
 
@@ -505,6 +627,10 @@ void luaSL_setup_llltimers_metatable(lua_State *L, int expose_internal_funcs)
 
     lua_pushcfunction(L, lltimers_off, "off");
     lua_setfield(L, -2, "off");
+
+    // Store _tick in registry for host and timer wrapper access
+    lua_pushcclosurek(L, lltimers_tick_init, "_tick", 0, lltimers_tick_cont);
+    lua_setfield(L, LUA_REGISTRYINDEX, "LLTIMERS_TICK");
 
     if (expose_internal_funcs)
     {
