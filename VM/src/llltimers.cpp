@@ -43,6 +43,7 @@ int timer_event_wrapper_cont(lua_State *L, [[maybe_unused]] int status)
 // Forward declarations for timer wrapper management
 static void register_timer_wrapper(lua_State *L, lua_LLTimers *lltimers);
 static void unregister_timer_wrapper(lua_State *L, lua_LLTimers *lltimers);
+static void schedule_next_tick(lua_State *L, lua_LLTimers *lltimers);
 
 static void lltimers_dtor(lua_State *L, void *data)
 {
@@ -144,11 +145,14 @@ static int lltimers_on(lua_State *L)
     // Add to the end of the timers array
     lua_rawseti(L, -2, old_len + 1);
 
-    lua_pop(L, 1); // Pop timers array
-
     // Register timer wrapper with LLEvents when adding first timer
     if (old_len == 0)
         register_timer_wrapper(L, lltimers);
+
+    // Reschedule timer tick since we added a new timer
+    schedule_next_tick(L, lltimers);
+
+    lua_pop(L, 1); // Pop timers array
 
     // Return the passed-in handler so it can be unregistered later
     lua_pushvalue(L, 3);
@@ -190,6 +194,10 @@ static int lltimers_once(lua_State *L)
 
     // Add to the timers array
     lua_rawseti(L, -2, old_len + 1);
+
+    // Reschedule timer tick since we added a new timer
+    schedule_next_tick(L, lltimers);
+
     lua_pop(L, 1); // Pop timers array
 
     // Register timer wrapper with LLEvents when adding first timer
@@ -247,10 +255,11 @@ static int lltimers_off(lua_State *L)
 
     lua_pop(L, 1); // Pop timers array
 
-    // Check if we just removed the last timer
-    if (found && len == 1)
+    // Reschedule timer tick since we may have removed a timer
+    // (this will also unregister the wrapper if we removed the last timer)
+    if (found)
     {
-        unregister_timer_wrapper(L, lltimers);
+        schedule_next_tick(L, lltimers);
     }
 
     lua_pushboolean(L, found);
@@ -313,23 +322,26 @@ static void unregister_timer_wrapper(lua_State *L, lua_LLTimers *lltimers)
 }
 
 // Helper function to schedule the next timer tick
-// Expects timers_tab to be on the stack at the given index
-static void schedule_next_tick(lua_State *L)
+// Accepts LLTimers userdata as parameter and manages its own stack
+static void schedule_next_tick(lua_State *L, lua_LLTimers *lltimers)
 {
     auto *sl_state = LUAU_GET_SL_VM_STATE(lua_mainthread(L));
 
     if (!sl_state->setTimerEventCb)
         return; // No callback set, can't schedule
 
-    int len = lua_objlen(L, LIVE_TIMERS_ARRAY);
+    // Get timers array on the stack
+    lua_getref(L, lltimers->timers_tab_ref);
+    int len = lua_objlen(L, -1);
 
     if (len == 0)
     {
+        lua_pop(L, 1); // Pop timers array
+
         // No timers pending, unsubscribe from the parent timer event
         sl_state->setTimerEventCb(L, 0.0);
 
         // Unregister timer wrapper from LLEvents
-        auto *lltimers = (lua_LLTimers *)lua_touserdata(L, LLTIMERS_USERDATA);
         unregister_timer_wrapper(L, lltimers);
 
         return;
@@ -339,12 +351,14 @@ static void schedule_next_tick(lua_State *L)
     double min_time = HUGE_VAL;
     for (int i = 1; i <= len; i++)
     {
-        lua_rawgeti(L, LIVE_TIMERS_ARRAY, i);
+        lua_rawgeti(L, -1, i);  // Get timer from timers array
         lua_rawgeti(L, -1, TIMER_NEXT_RUN);
         double next_run = lua_tonumber(L, -1);
         lua_pop(L, 2); // Pop nextRun and timer data
         min_time = fmin(min_time, next_run);
     }
+
+    lua_pop(L, 1); // Pop timers array
 
     // Get current time
     double current_time = sl_state->clockProvider ? sl_state->clockProvider(L) : 0.0;
@@ -589,7 +603,8 @@ static int lltimers_tick_cont(lua_State *L, [[maybe_unused]]int status)
     }
 
     // Done processing all timers, schedule the next tick
-    schedule_next_tick(L);
+    auto *lltimers = (lua_LLTimers *)lua_touserdata(L, LLTIMERS_USERDATA);
+    schedule_next_tick(L, lltimers);
 
     return 0;
 }

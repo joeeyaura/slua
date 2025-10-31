@@ -28,12 +28,12 @@ assert(typeof(on_handler) == "function")
 -- Simulate timer tick
 setclock(0.05) -- Not time yet
 -- `ll.GetTime()` should be using the clock provider.
-assert((ll.GetTime() - 0.05) < 0.01)
+assert(math.abs(ll.GetTime() - 0.05) < 0.01)
 LLTimers:_tick()
 assert(on_count == 0)
 
 -- This should be using our fake clock
-assert(os.clock() - 0.05 < 0.000001)
+assert(math.abs(os.clock() - 0.05) < 0.000001)
 
 incrementclock(0.05) -- Advance to past 0.1, should fire now
 LLTimers:_tick()
@@ -366,5 +366,34 @@ LLTimers:off(throw_error)
 -- Only one of them now has the problematic handler
 LLTimers:_tick()
 assert_errors(function() timers_clone:_tick() end, "called!")
+
+-- Test that setTimerEventCb is called with correct intervals
+-- Single timer should schedule with correct interval
+setclock(10.0)
+local interval_timer1 = LLTimers:every(0.5, function() end)
+assert(math.abs(get_last_interval() - 0.5) < 0.001)
+
+-- Adding an earlier timer should reschedule to shorter interval
+local interval_timer2 = LLTimers:on(0.3, function() end)
+assert(math.abs(get_last_interval() - 0.3) < 0.001)
+
+-- Adding a later timer should not change the interval
+local interval_timer3 = LLTimers:on(1.0, function() end)
+-- Should still be 0.3 (the earliest timer)
+assert(math.abs(get_last_interval() - 0.3) < 0.001)
+
+-- Scenario 4: Removing the earliest timer should reschedule to next timer
+LLTimers:off(interval_timer2)
+-- Now earliest should be 0.5
+assert(math.abs(get_last_interval() - 0.5) < 0.001)
+
+-- Scenario 5: Removing all timers should call with 0.0
+LLTimers:off(interval_timer1)
+LLTimers:off(interval_timer3)
+assert(math.abs(get_last_interval() - 0.0) < 0.001)
+
+-- Oh also we should make sure that `:once()` behaves correctly.
+LLTimers:once(0.5, interval_timer1)
+assert(math.abs(get_last_interval() - 0.5) < 0.001)
 
 return "OK"

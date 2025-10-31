@@ -603,9 +603,11 @@ TEST_CASE("LLEvents")
 }
 
 static double test_clock_time = 0.0;
+static double last_timer_interval = -1.0;
 TEST_CASE("LLTimers")
 {
     test_clock_time = 0.0;
+    last_timer_interval = -1.0;
     runConformance("lltimers.lua", nullptr, [](lua_State *L) {
         lua_pushcfunction(L, lua_break, "breaker");
         lua_setglobal(L, "breaker");
@@ -624,15 +626,23 @@ TEST_CASE("LLTimers")
         }, "getclock");
         lua_setglobal(L, "getclock");
 
+        // Provide a function to read the last timer interval
+        lua_pushcfunction(L, [](lua_State *L) {
+            lua_pushnumber(L, last_timer_interval);
+            return 1;
+        }, "get_last_interval");
+        lua_setglobal(L, "get_last_interval");
+
         auto sl_state = LUAU_GET_SL_VM_STATE(L);
         // Set up clock callback to return our test time
         sl_state->performanceClockProvider = sl_state->clockProvider = [](lua_State *L) {
             return test_clock_time;
         };
-        // Set up timer event callback (no-op for tests)
+        // Set up timer event callback to capture the last interval
         sl_state->setTimerEventCb = [](lua_State *L, double interval) {
             // In real usage, this would schedule a timer event
-            // For tests, we manually call _tick()
+            // For tests, we manually call _tick() and capture the interval
+            last_timer_interval = interval;
         };
     });
 }
