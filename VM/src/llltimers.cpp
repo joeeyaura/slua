@@ -629,6 +629,9 @@ void luaSL_setup_llltimers_metatable(lua_State *L, int expose_internal_funcs)
 
     // Add methods
     lua_pushcfunction(L, lltimers_on, "on");
+    lua_pushvalue(L, -1);
+    // Either :every() or :on() is fine
+    lua_setfield(L, -3, "every");
     lua_setfield(L, -2, "on");
 
     lua_pushcfunction(L, lltimers_once, "once");

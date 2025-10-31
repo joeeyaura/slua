@@ -316,8 +316,10 @@ LLTimers:off(integration_timer)
 -- Test callable tables (tables with __call metamethod) as timer handlers
 setclock(6.0)
 local callable_count = 0
-local callable_table = setmetatable({}, {
+local callable_table = nil
+callable_table = setmetatable({}, {
     __call = function(self)
+        assert(self == callable_table)
         callable_count += 1
     end
 })
