@@ -75,10 +75,10 @@ static void lltimers_dtor(lua_State *L, void *data)
 int luaSL_createtimermanager(lua_State *L)
 {
     // Validate LLEvents parameter on top of stack
-    if (!lua_touserdatatagged(L, 1, UTAG_LLEVENTS))
-        luaL_typeerror(L, 1, "LLEvents");
+    if (!lua_touserdatatagged(L, -1, UTAG_LLEVENTS))
+        luaL_typeerror(L, -1, "LLEvents");
 
-    lua_checkstack(L, 3);
+    lua_checkstack(L, 5);
 
     // Store LLEvents reference and remove from stack
     int llevents_ref = lua_ref(L, 1);
