@@ -880,6 +880,19 @@ static int ll_detectedtouchface(lua_State *L)
     return 1;
 }
 
+static int ll_generatekey(lua_State *L)
+{
+    uint32_t pcg32_random(uint64_t* state);
+    uint8_t uuid_bytes[16] = {0};
+    for(size_t i=0; i<16; i += 4)
+    {
+        auto rand_val = pcg32_random(&L->global->rngstate);
+        memcpy(&uuid_bytes[i], &rand_val, 4);
+    }
+    luaSL_pushuuidbytes(L, (const uint8_t*)&uuid_bytes);
+    return 1;
+}
+
 static const luaL_Reg lltestlib[] = {
     // This requires weird unicode semantics we shouldn't re-implement by hand.
     {"GetSubString", ll_getsubstring},
@@ -892,6 +905,7 @@ static const luaL_Reg lltestlib[] = {
     {"GetFreeMemory", ll_getfreememory},
     // Strictly just for testing that the `ll.Detected*()` wrappers work at all.
     {"DetectedTouchFace", ll_detectedtouchface},
+    {"GenerateKey", ll_generatekey},
     {NULL, NULL},
 };
 
