@@ -10,7 +10,8 @@ using namespace Luau;
 LUAU_FASTFLAG(LuauSolverV2)
 LUAU_FASTFLAG(DebugLuauEqSatSimplification)
 LUAU_FASTFLAG(LuauEagerGeneralization4)
-LUAU_FASTFLAG(LuauTrackFreeInteriorTypePacks)
+LUAU_FASTFLAG(LuauTypeFunNoScopeMapRef)
+LUAU_FASTFLAG(LuauInstantiateResolvedTypeFunctions)
 
 TEST_SUITE_BEGIN("UserDefinedTypeFunctionTests");
 
@@ -2371,7 +2372,6 @@ TEST_CASE_FIXTURE(ExternTypeFixture, "type_alias_reduction_errors")
 
     ScopedFastFlag sff[] = {
         {FFlag::LuauEagerGeneralization4, true},
-        {FFlag::LuauTrackFreeInteriorTypePacks, true},
     };
 
     CheckResult result = check(R"(
@@ -2447,6 +2447,141 @@ end
 
     LUAU_REQUIRE_ERROR_COUNT(1, result);
     CHECK(toString(result.errors[0]) == R"(Redefinition of type 't0', previously defined at line 2)");
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "udtf_fuzz_environment_scope_crash")
+{
+    ScopedFastFlag newSolver{FFlag::LuauSolverV2, true};
+    ScopedFastFlag luauTypeFunNoScopeMapRef{FFlag::LuauTypeFunNoScopeMapRef, true};
+
+    CheckResult result = check(R"(
+local _, running = ...
+type function t255() end
+if _ then
+    type function t1() end
+    type function t6(l0,...) end
+    type function t255<A...>() end
+    export type function t0<A>() end
+else
+    type function t1(...) end
+    type function t66<A...>(...) end
+    type function t255() end
+    if running then
+        export type function t255() end
+        type function t0(l0) end
+    end
+end
+type function t0(l0,...) end
+export type function t66(...)
+    export type function t255() end
+end
+    )");
+
+    LUAU_REQUIRE_NO_ERRORS(result);
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "oss_1887_udtf_with_optional_missing")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::LuauSolverV2, true},
+        {FFlag::LuauInstantiateResolvedTypeFunctions, true},
+    };
+
+    CheckResult results = check(R"(
+        type function create_table_with_key()
+            local tbl = types.newtable()
+            tbl:setproperty(types.singleton "key", types.unionof(types.string, types.singleton(nil)))
+            return tbl
+        end
+        local a: create_table_with_key = {}
+    )");
+
+    LUAU_REQUIRE_ERROR_COUNT(1, results);
+    LUAU_REQUIRE_ERROR(results, UnappliedTypeFunction);
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "oss_1887_udtf_with_optional_present")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::LuauSolverV2, true},
+        {FFlag::LuauInstantiateResolvedTypeFunctions, true},
+    };
+
+    CheckResult results = check(R"(
+        type function create_table_with_key()
+            local tbl = types.newtable()
+            tbl:setproperty(types.singleton "key", types.unionof(types.string, types.singleton(nil)))
+            return tbl
+        end
+        local a: create_table_with_key = { key = "123" }
+    )");
+
+    LUAU_REQUIRE_ERROR_COUNT(1, results);
+    LUAU_REQUIRE_ERROR(results, UnappliedTypeFunction);
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "oss_1887_udtf_table_mismatch")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::LuauSolverV2, true},
+        {FFlag::LuauInstantiateResolvedTypeFunctions, true},
+    };
+
+    CheckResult results = check(R"(
+        type function create_table_with_key()
+            local tbl = types.newtable()
+            tbl:setproperty(types.singleton "key", types.optional(types.number))
+            return tbl
+        end
+        local my_tbl: create_table_with_key = {key = "123"}
+    )");
+
+    LUAU_REQUIRE_ERROR_COUNT(2, results);
+    CHECK(get<UnappliedTypeFunction>(results.errors[0]));
+    auto err = get<TypeMismatch>(results.errors[1]);
+    REQUIRE(err);
+    CHECK_EQ("string", toString(err->givenType));
+    CHECK_EQ("number?", toString(err->wantedType));
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "oss_1887_basic_mismatch")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::LuauSolverV2, true},
+        {FFlag::LuauInstantiateResolvedTypeFunctions, true},
+    };
+
+    CheckResult results = check(R"(
+        type function foo()
+            return types.number
+        end
+        local f: foo = "123"
+    )");
+
+    LUAU_REQUIRE_ERROR_COUNT(2, results);
+    CHECK(get<UnappliedTypeFunction>(results.errors[0]));
+    auto err = get<TypeMismatch>(results.errors[1]);
+    REQUIRE(err);
+    CHECK_EQ("string", toString(err->givenType));
+    CHECK_EQ("number", toString(err->wantedType));
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "oss_1887_basic_match")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::LuauSolverV2, true},
+        {FFlag::LuauInstantiateResolvedTypeFunctions, true},
+    };
+
+    CheckResult results = check(R"(
+        type function foo()
+            return types.string
+        end
+        local f: foo = "123"
+    )");
+
+    LUAU_REQUIRE_ERROR_COUNT(1, results);
+    LUAU_REQUIRE_ERROR(results, UnappliedTypeFunction);
 }
 
 TEST_SUITE_END();

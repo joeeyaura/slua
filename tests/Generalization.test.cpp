@@ -16,8 +16,10 @@ using namespace Luau;
 
 LUAU_FASTFLAG(LuauSolverV2)
 LUAU_FASTFLAG(LuauEagerGeneralization4)
-LUAU_FASTFLAG(LuauTrackFreeInteriorTypePacks)
 LUAU_FASTFLAG(DebugLuauForbidInternalTypes)
+LUAU_FASTFLAG(LuauSubtypingReportGenericBoundMismatches)
+
+LUAU_FASTFLAG(LuauSubtypingGenericsDoesntUseVariance)
 
 TEST_SUITE_BEGIN("Generalization");
 
@@ -164,10 +166,12 @@ TEST_CASE_FIXTURE(GeneralizationFixture, "functions_containing_cyclic_tables_can
 {
     TypeId selfTy = arena.addType(BlockedType{});
 
-    TypeId methodTy = arena.addType(FunctionType{
-        arena.addTypePack({selfTy}),
-        arena.addTypePack({builtinTypes.numberType}),
-    });
+    TypeId methodTy = arena.addType(
+        FunctionType{
+            arena.addTypePack({selfTy}),
+            arena.addTypePack({builtinTypes.numberType}),
+        }
+    );
 
     asMutable(selfTy)->ty.emplace<TableType>(
         TableType::Props{{"count", builtinTypes.numberType}, {"method", methodTy}}, std::nullopt, TypeLevel{}, TableState::Sealed
@@ -229,7 +233,6 @@ TEST_CASE_FIXTURE(GeneralizationFixture, "(t1, (t1 <: 'b)) -> () where t1 = ('a 
 {
     ScopedFastFlag sff[] = {
         {FFlag::LuauEagerGeneralization4, true},
-        {FFlag::LuauTrackFreeInteriorTypePacks, true}
     };
 
     TableType tt;
@@ -266,7 +269,6 @@ TEST_CASE_FIXTURE(GeneralizationFixture, "(('a <: {'b})) -> ()")
 {
     ScopedFastFlag sff[] = {
         {FFlag::LuauEagerGeneralization4, true},
-        {FFlag::LuauTrackFreeInteriorTypePacks, true}
     };
 
     auto [aTy, aFree] = freshType();
@@ -401,16 +403,27 @@ TEST_CASE_FIXTURE(Fixture, "generics_dont_leak_into_callback")
 
 TEST_CASE_FIXTURE(Fixture, "generics_dont_leak_into_callback_2")
 {
-    ScopedFastFlag _{FFlag::LuauSolverV2, true};
+    ScopedFastFlag sffs[] = {
+        {FFlag::LuauSolverV2, true}, {FFlag::LuauSubtypingReportGenericBoundMismatches, true}, {FFlag::LuauSubtypingGenericsDoesntUseVariance, true}
+    };
 
-    // FIXME: CLI-156389: this is clearly wrong, but also predates this PR.
-    LUAU_REQUIRE_NO_ERRORS(check(R"(
-        local func: <T>(T, (T) -> ()) -> () = nil :: any
-        local foobar: (number) -> () = nil :: any
-        func({}, function(obj)
-            foobar(obj)
-        end)
-    )"));
+    CheckResult result = check(R"(
+local func: <T>(T, (T) -> ()) -> () = nil :: any
+local foobar: (number) -> () = nil :: any
+func({}, function(obj)
+    foobar(obj)
+end)
+    )");
+
+    LUAU_REQUIRE_ERROR_COUNT(1, result);
+    const GenericBoundsMismatch* gbm = get<GenericBoundsMismatch>(result.errors[0]);
+    REQUIRE_MESSAGE(gbm, "Expected GenericBoundsMismatch but got: " << toString(result.errors[0]));
+    CHECK_EQ(gbm->genericName, "T");
+    CHECK_EQ(gbm->lowerBounds.size(), 1);
+    CHECK_EQ(toString(gbm->lowerBounds[0]), "{  }");
+    CHECK_EQ(gbm->upperBounds.size(), 1);
+    CHECK_EQ(toString(gbm->upperBounds[0]), "number");
+    CHECK_EQ(result.errors[0].location, Location{Position{3, 0}, Position{3, 4}});
 }
 
 TEST_CASE_FIXTURE(Fixture, "generic_argument_with_singleton_oss_1808")
@@ -429,7 +442,6 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "avoid_cross_module_mutation_in_bidirectional
 {
     ScopedFastFlag sff[] = {
         {FFlag::LuauEagerGeneralization4, true},
-        {FFlag::LuauTrackFreeInteriorTypePacks, true}
     };
 
     fileResolver.source["Module/ListFns"] = R"(

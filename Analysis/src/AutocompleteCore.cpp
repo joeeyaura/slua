@@ -17,6 +17,9 @@
 #include "Luau/TypePack.h"
 
 #include <algorithm>
+#include <array>
+#include <string>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 
@@ -25,9 +28,13 @@ LUAU_FASTINT(LuauTypeInferIterationLimit)
 LUAU_FASTINT(LuauTypeInferRecursionLimit)
 LUAU_FASTFLAGVARIABLE(DebugLuauMagicVariableNames)
 LUAU_FASTFLAG(LuauImplicitTableIndexerKeys3)
+LUAU_FASTFLAGVARIABLE(LuauIncludeBreakContinueStatements)
+LUAU_FASTFLAGVARIABLE(LuauSuggestHotComments)
 
-static const std::unordered_set<std::string> kStatementStartingKeywords =
+static constexpr std::array<std::string_view, 12> kStatementStartingKeywords =
     {"while", "if", "local", "repeat", "function", "do", "for", "return", "break", "continue", "type", "export"};
+
+static constexpr std::array<std::string_view, 6> kHotComments = {"nolint", "nocheck", "nonstrict", "strict", "optimize", "native"};
 
 namespace Luau
 {
@@ -1210,6 +1217,28 @@ static bool isBindingLegalAtCurrentPosition(const Symbol& symbol, const Binding&
     return binding.location == Location() || !binding.location.containsClosed(pos);
 }
 
+static bool isValidBreakContinueContext(const std::vector<AstNode*>& ancestry, Position position)
+{
+    LUAU_ASSERT(FFlag::LuauIncludeBreakContinueStatements);
+    for (auto it = ancestry.rbegin(); it != ancestry.rend(); ++it)
+    {
+        if ((*it)->is<AstStatFunction>() || (*it)->is<AstStatLocalFunction>() || (*it)->is<AstExprFunction>() || (*it)->is<AstStatTypeFunction>() ||
+            (*it)->is<AstTypeFunction>())
+            return false;
+
+        if (auto statWhile = (*it)->as<AstStatWhile>(); statWhile && statWhile->body->location.contains(position))
+            return true;
+        else if (auto statFor = (*it)->as<AstStatFor>(); statFor && statFor->body->location.contains(position))
+            return true;
+        else if (auto statForIn = (*it)->as<AstStatForIn>(); statForIn && statForIn->body->location.contains(position))
+            return true;
+        else if (auto statRepeat = (*it)->as<AstStatRepeat>(); statRepeat && statRepeat->body->location.contains(position))
+            return true;
+    }
+
+    return false;
+}
+
 static AutocompleteEntryMap autocompleteStatement(
     const Module& module,
     const std::vector<AstNode*>& ancestry,
@@ -1254,8 +1283,20 @@ static AutocompleteEntryMap autocompleteStatement(
         scope = scope->parent;
     }
 
-    for (const auto& kw : kStatementStartingKeywords)
-        result.emplace(kw, AutocompleteEntry{AutocompleteEntryKind::Keyword});
+    if (FFlag::LuauIncludeBreakContinueStatements)
+    {
+        bool shouldIncludeBreakAndContinue = isValidBreakContinueContext(ancestry, position);
+        for (const std::string_view kw : kStatementStartingKeywords)
+        {
+            if ((kw != "break" && kw != "continue") || shouldIncludeBreakAndContinue)
+                result.emplace(kw, AutocompleteEntry{AutocompleteEntryKind::Keyword});
+        }
+    }
+    else
+    {
+        for (const std::string_view kw : kStatementStartingKeywords)
+            result.emplace(kw, AutocompleteEntry{AutocompleteEntryKind::Keyword});
+    }
 
     for (auto it = ancestry.rbegin(); it != ancestry.rend(); ++it)
     {
@@ -1331,7 +1372,7 @@ static bool autocompleteIfElseExpression(
     if (node->is<AstExprIfElse>())
     {
         // Don't try to complete when the current node is an if-else expression (i.e. only try to complete when the node is a child of an if-else
-        // expression.
+        // expression).
         return true;
     }
 
@@ -1803,10 +1844,24 @@ AutocompleteResult autocomplete_(
     const ScopePtr& scopeAtPosition,
     Position position,
     FileResolver* fileResolver,
-    StringCompletionCallback callback
+    StringCompletionCallback callback,
+    bool isInHotComment
 )
 {
     LUAU_TIMETRACE_SCOPE("Luau::autocomplete_", "AutocompleteCore");
+
+    if (FFlag::LuauSuggestHotComments)
+    {
+        if (isInHotComment)
+        {
+            AutocompleteEntryMap result;
+
+            for (const std::string_view hc : kHotComments)
+                result.emplace(hc, AutocompleteEntry{AutocompleteEntryKind::HotComment});
+            return {std::move(result), ancestry, AutocompleteContext::HotComment};
+        }
+    }
+
     AstNode* node = ancestry.back();
 
     AstExprConstantNil dummy{Location{}};
@@ -2104,6 +2159,5 @@ AutocompleteResult autocomplete_(
 
     return {};
 }
-
 
 } // namespace Luau

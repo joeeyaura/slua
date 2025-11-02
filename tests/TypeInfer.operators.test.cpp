@@ -17,19 +17,25 @@
 using namespace Luau;
 
 LUAU_FASTFLAG(LuauSolverV2)
+LUAU_FASTFLAG(LuauNoScopeShallNotSubsumeAll)
+LUAU_FASTFLAG(LuauTrackUniqueness)
 LUAU_FASTFLAG(LuauEagerGeneralization4)
+LUAU_FASTFLAG(LuauSolverAgnosticStringification)
 
 TEST_SUITE_BEGIN("TypeInferOperators");
 
 TEST_CASE_FIXTURE(Fixture, "or_joins_types")
 {
+    ScopedFastFlag _[] = {
+        {FFlag::LuauEagerGeneralization4, true},
+    };
     CheckResult result = check(R"(
         local s = "a" or 10
         local x:string|number = s
     )");
     LUAU_REQUIRE_NO_ERRORS(result);
 
-    if (FFlag::LuauEagerGeneralization4)
+    if (FFlag::LuauSolverV2)
     {
         // FIXME: Regression
         CHECK("(string & ~(false?)) | number" == toString(*requireType("s")));
@@ -44,6 +50,9 @@ TEST_CASE_FIXTURE(Fixture, "or_joins_types")
 
 TEST_CASE_FIXTURE(Fixture, "or_joins_types_with_no_extras")
 {
+    ScopedFastFlag _[] = {
+        {FFlag::LuauEagerGeneralization4, true},
+    };
     CheckResult result = check(R"(
         local s = "a" or 10
         local x:number|string = s
@@ -51,7 +60,7 @@ TEST_CASE_FIXTURE(Fixture, "or_joins_types_with_no_extras")
     )");
     LUAU_REQUIRE_NO_ERRORS(result);
 
-    if (FFlag::LuauEagerGeneralization4)
+    if (FFlag::LuauSolverV2)
     {
         // FIXME: Regression.
         CHECK("(string & ~(false?)) | number" == toString(*requireType("s")));
@@ -66,13 +75,16 @@ TEST_CASE_FIXTURE(Fixture, "or_joins_types_with_no_extras")
 
 TEST_CASE_FIXTURE(Fixture, "or_joins_types_with_no_superfluous_union")
 {
+    ScopedFastFlag _[] = {
+        {FFlag::LuauEagerGeneralization4, true},
+    };
     CheckResult result = check(R"(
         local s = "a" or "b"
         local x:string = s
     )");
     LUAU_REQUIRE_NO_ERRORS(result);
 
-    if (FFlag::LuauEagerGeneralization4)
+    if (FFlag::LuauSolverV2)
     {
         // FIXME: Regression
         CHECK("(string & ~(false?)) | string" == toString(requireType("s")));
@@ -1443,7 +1455,15 @@ local function foo(arg: {name: string}?)
 end
     )");
 
-    LUAU_REQUIRE_NO_ERRORS(result);
+    // FIXME(CLI-165431): fixing subtyping revealed an overload selection problems
+    if (FFlag::LuauSolverV2 && FFlag::LuauNoScopeShallNotSubsumeAll && FFlag::LuauTrackUniqueness)
+        LUAU_REQUIRE_NO_ERRORS(result);
+    else if (FFlag::LuauSolverV2 && FFlag::LuauNoScopeShallNotSubsumeAll)
+    {
+        LUAU_REQUIRE_ERROR_COUNT(2, result);
+    }
+    else
+        LUAU_REQUIRE_NO_ERRORS(result);
 }
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "luau_polyfill_is_array_simplified")

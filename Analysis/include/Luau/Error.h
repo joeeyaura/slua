@@ -1,11 +1,12 @@
 // This file is part of the Luau programming language and is licensed under MIT License; see LICENSE.txt for details
 #pragma once
 
+#include "Luau/Ast.h"
 #include "Luau/Location.h"
 #include "Luau/NotNull.h"
 #include "Luau/Type.h"
+#include "Luau/TypeIds.h"
 #include "Luau/Variant.h"
-#include "Luau/Ast.h"
 
 #include <set>
 
@@ -504,6 +505,42 @@ struct MultipleNonviableOverloads
     bool operator==(const MultipleNonviableOverloads& rhs) const;
 };
 
+// Error where a type alias violates the recursive restraint, ie when a type alias T<A> has T with different arguments on the RHS.
+struct RecursiveRestraintViolation
+{
+    bool operator==(const RecursiveRestraintViolation& rhs) const
+    {
+        return true;
+    }
+};
+
+// Error during subtyping when the inferred bounds of a generic type are incompatible
+struct GenericBoundsMismatch
+{
+    std::string_view genericName;
+    std::vector<TypeId> lowerBounds;
+    std::vector<TypeId> upperBounds;
+
+    GenericBoundsMismatch(std::string_view genericName, TypeIds lowerBoundSet, TypeIds upperBoundSet);
+
+    bool operator==(const GenericBoundsMismatch& rhs) const;
+};
+
+// Error when referencing a type function without providing explicit generics.
+//
+//  type function create_table_with_key()
+//      local tbl = types.newtable()
+//      tbl:setproperty(types.singleton "key", types.unionof(types.string, types.singleton(nil)))
+//      return tbl
+//  end
+//  local a: create_table_with_key = {}
+//           ^^^^^^^^^^^^^^^^^^^^^ This should have `<>` at the end.
+//
+struct UnappliedTypeFunction
+{
+    bool operator==(const UnappliedTypeFunction& rhs) const;
+};
+
 using TypeErrorData = Variant<
     TypeMismatch,
     UnknownSymbol,
@@ -559,7 +596,11 @@ using TypeErrorData = Variant<
     CannotCheckDynamicStringFormatCalls,
     GenericTypeCountMismatch,
     GenericTypePackCountMismatch,
-    MultipleNonviableOverloads>;
+    MultipleNonviableOverloads,
+    RecursiveRestraintViolation,
+    GenericBoundsMismatch,
+    UnappliedTypeFunction>;
+
 
 struct TypeErrorSummary
 {
