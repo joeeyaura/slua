@@ -11,6 +11,7 @@
 #include "lmem.h"
 #include "ludata.h"
 #include "lbuffer.h"
+#include "llsl.h"
 
 #include <string.h>
 
@@ -360,9 +361,28 @@ static int traversetable(global_State* g, LuaTable* h)
         {
             LUAU_ASSERT(!ttisnil(gkey(n)));
             if (!weakkey)
+            {
                 markvalue(g, gkey(n));
+            }
+            // ServerLua: Mark UUIDs in user weak tables during traversal (value semantics)
+            else if (h->memcat > 1 && ttisuserdata(gkey(n)))
+            {
+                GCObject* key = gcvalue(gkey(n));
+                if (key->gch.tt == LUA_TUSERDATA && gco2u(key)->tag == UTAG_UUID)
+                    markobject(g, &key->gch);
+            }
+
             if (!weakvalue)
+            {
                 markvalue(g, gval(n));
+            }
+            // ServerLua: Mark UUIDs in user weak tables during traversal (value semantics)
+            else if (h->memcat > 1 && ttisuserdata(gval(n)))
+            {
+                GCObject* val = gcvalue(gval(n));
+                if (val->gch.tt == LUA_TUSERDATA && gco2u(val)->tag == UTAG_UUID)
+                    markobject(g, &val->gch);
+            }
         }
     }
     return weakkey || weakvalue;
@@ -570,11 +590,18 @@ static size_t propagateall(global_State* g)
 ** tables. Strings behave as `values', so are never removed too. for
 ** other objects: if really collected, cannot keep them.
 */
-static int isobjcleared(GCObject* o)
+static int isobjcleared(GCObject* o, uint8_t tablememcat)
 {
     if (o->gch.tt == LUA_TSTRING)
     {
         stringmark(&o->ts); // strings are `values', so are never weak
+        return 0;
+    }
+
+    // ServerLua: UUIDs in user-created weak tables (memcat > 1) get value semantics
+    if (tablememcat > 1 && o->gch.tt == LUA_TUSERDATA && gco2u(o)->tag == UTAG_UUID)
+    {
+        stringmark(&o->u); // UUIDs are `values', so are never weak
         return 0;
     }
 
@@ -586,7 +613,8 @@ static int isobjcleared(GCObject* o)
     return iswhite(o);
 }
 
-#define iscleared(o) (iscollectable(o) && isobjcleared(gcvalue(o)))
+// ServerLua: include table memcat so we can check if UUID weak refs should be considered strong.
+#define iscleared(o, tablememcat) (iscollectable(o) && isobjcleared(gcvalue(o), tablememcat))
 
 static void tableresizeprotected(lua_State* L, LuaTable* t, int nhsize)
 {
@@ -623,7 +651,7 @@ static size_t cleartable(lua_State* L, GCObject* l)
         while (i--)
         {
             TValue* o = &h->array[i];
-            if (iscleared(o))   // value was collected?
+            if (iscleared(o, h->memcat))   // value was collected?
                 setnilvalue(o); // remove value
         }
         i = sizenode(h);
@@ -636,7 +664,7 @@ static size_t cleartable(lua_State* L, GCObject* l)
             if (!ttisnil(gval(n)))
             {
                 // can we clear key or value?
-                if (iscleared(gkey(n)) || iscleared(gval(n)))
+                if (iscleared(gkey(n), h->memcat) || iscleared(gval(n), h->memcat))
                 {
                     setnilvalue(gval(n)); // remove value ...
                     removeentry(n);       // remove entry from table

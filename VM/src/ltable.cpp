@@ -145,6 +145,14 @@ static LuaNode* mainposition(const LuaTable* t, const TValue* key)
         return hashboolean(t, bvalue(key));
     case LUA_TLIGHTUSERDATA:
         return hashpointer(t, pvalue(key));
+    case LUA_TUSERDATA:
+        // ServerLua: Hash UUIDs by their content for value semantics
+        if (uvalue(key)->tag == UTAG_UUID)
+        {
+            lua_LSLUUID* uuid = (lua_LSLUUID*)uvalue(key)->data;
+            return hashstr(t, uuid->str);
+        }
+        return hashpointer(t, gcvalue(key));
     default:
         return hashpointer(t, gcvalue(key));
     }

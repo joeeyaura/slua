@@ -354,10 +354,27 @@ static int get_num_table_keys(lua_State *L, int idx)
     return num;
 }
 
-static void require_weak_uuid_counts(lua_State *L, int start_idx, int num_irregular, int num_compressed)
+#define require_weak_uuid_counts(L, start_idx, num_irregular, num_compressed) \
+do { \
+REQUIRE_EQ(get_num_table_keys(L, (start_idx)), (num_irregular)); \
+REQUIRE_EQ(get_num_table_keys(L, (start_idx) + 1), (num_compressed)); \
+} while (0)
+
+// Helper function to create a weak table
+// mode: "k" for weak keys, "v" for weak values, "kv" for both
+// Returns the stack index of the created table
+static int create_weak_table(lua_State *L, const char* mode)
 {
-    REQUIRE_EQ(get_num_table_keys(L, start_idx), num_irregular);
-    REQUIRE_EQ(get_num_table_keys(L, start_idx + 1), num_compressed);
+    lua_newtable(L);
+    int table_idx = lua_gettop(L);
+
+    // Create weak metatable
+    lua_newtable(L);
+    lua_pushstring(L, mode);
+    lua_setfield(L, -2, "__mode");
+    lua_setmetatable(L, table_idx);
+
+    return table_idx;
 }
 
 TEST_CASE("UUID interning")
@@ -430,6 +447,92 @@ TEST_CASE("UUID interning")
     lua_pop(L, 1);
     lua_gc(L, LUA_GCCOLLECT, 0);
     require_weak_uuid_counts(L, weak_idx, 0, 1);
+    lua_pop(L, 1);
+    lua_gc(L, LUA_GCCOLLECT, 0);
+
+    // Test that UUIDs have value semantics in user weak tables (memcat > 1)
+    lua_setmemcat(L, 2);
+
+    // Create a weak-keyed table
+    int user_weak_table_idx = create_weak_table(L, "k");
+
+    // Push two different instances of the same UUID as keys (they'll be interned to same pointer)
+    luaSL_pushuuidstring(L, "12345678-9abc-def0-1234-56789abcdef0");
+    GCObject* first_uuid_ptr = luaA_toobject(L, -1)->value.gc;
+    lua_pushstring(L, "first");
+    lua_settable(L, user_weak_table_idx);
+
+    luaSL_pushuuidstring(L, "12345678-9abc-def0-1234-56789abcdef0");
+    GCObject* second_uuid_ptr = luaA_toobject(L, -1)->value.gc;
+    lua_pushstring(L, "second");
+    lua_settable(L, user_weak_table_idx);
+
+    // Verify these are the same instance (interning)
+    REQUIRE_EQ(first_uuid_ptr, second_uuid_ptr);
+
+    // Table should have 1 entry (same UUID key)
+    REQUIRE_EQ(get_num_table_keys(L, user_weak_table_idx), 1);
+
+    lua_gc(L, LUA_GCCOLLECT, 0);
+
+    // Test with a UUID that's not referenced anywhere else
+    int user_weak_table2_idx = create_weak_table(L, "k");
+
+    // Push UUID and store it
+    luaSL_pushuuidstring(L, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    lua_pushvalue(L, -1); // Duplicate for later
+    lua_pushstring(L, "value");
+    lua_settable(L, user_weak_table2_idx);
+
+    // Table should have 1 entry
+    REQUIRE_EQ(get_num_table_keys(L, user_weak_table2_idx), 1);
+
+    // Pop the duplicate UUID, run GC
+    lua_pop(L, 1);
+    lua_gc(L, LUA_GCCOLLECT, 0);
+
+    require_weak_uuid_counts(L, weak_idx, 0, 2);
+
+    // In a memcat > 1 weak table, the UUID should NOT be collected (value semantics)
+    REQUIRE_EQ(get_num_table_keys(L, user_weak_table2_idx), 1);
+
+    // Verify we can still look it up
+    luaSL_pushuuidstring(L, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    lua_gettable(L, user_weak_table2_idx);
+    REQUIRE(lua_isstring(L, -1));
+    REQUIRE_EQ(std::string(lua_tostring(L, -1)), "value");
+    lua_pop(L, 1);
+
+    // Test UUIDs as values in weak-value tables (memcat > 1)
+    lua_gc(L, LUA_GCCOLLECT, 0);
+
+    int user_weak_value_table_idx = create_weak_table(L, "v");
+
+    // Store UUID as a value
+    lua_pushstring(L, "test_key");
+    luaSL_pushuuidstring(L, "bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+    lua_settable(L, user_weak_value_table_idx);
+
+    // Table should have 1 entry
+    REQUIRE_EQ(get_num_table_keys(L, user_weak_value_table_idx), 1);
+
+    lua_gc(L, LUA_GCCOLLECT, 0);
+
+    // UUID value should NOT be collected (value semantics in memcat > 1)
+    REQUIRE_EQ(get_num_table_keys(L, user_weak_value_table_idx), 1);
+
+    // Should have 3 UUIDs in interning table now (2 from keys + 1 from value)
+    require_weak_uuid_counts(L, weak_idx, 0, 3);
+
+    // Verify we can still look up the value
+    lua_pushstring(L, "test_key");
+    lua_gettable(L, user_weak_value_table_idx);
+    REQUIRE(lua_isuserdata(L, -1));
+    // Verify it's the correct UUID value
+    size_t len;
+    const char* str = luaL_tolstring(L, -1, &len);
+    REQUIRE_EQ(std::string(str), "bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+    lua_pop(L, 2); // pop string and UUID
 }
 
 TEST_CASE("UUID interning (GC Fixed)")
