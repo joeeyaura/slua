@@ -558,4 +558,30 @@ assert(catchup_scheduled_times[2] < 45.2, "Second fire shows synced schedule (~4
 -- Clean up
 LLTimers:off(catchup_handler)
 
+
+-- Verify that user code can't get a reference to the timers tick function through `debug`
+local expected = {
+    "lltimers.lua:false",
+    -- Should not be able to get a reference to `LLTimers:_tick()`
+    "[C]:true",
+    "lltimers.lua:false",
+}
+local passed = false
+LLTimers:once(0, function()
+    local i = 0
+    repeat
+        local name, func = debug.info(i + 1, "sf")
+        if name == nil then
+            break
+        end
+        i += 1
+        local actual = `{name}:{func==nil}`
+        assert(expected[i] == actual, `{expected[i]} == {actual}`)
+    until false
+    assert(i == #expected, `Had same number of calls ({i} == {#expected})`)
+    passed = true
+end)
+LLTimers:_tick()
+assert(passed)
+
 return "OK"

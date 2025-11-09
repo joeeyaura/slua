@@ -3,6 +3,8 @@
 #include "lualib.h"
 
 #include "lvm.h"
+#include "lapi.h"
+#include "lstate.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -93,13 +95,25 @@ static int db_info(lua_State* L)
             break;
 
         case 'f':
+        {
             if (L1 == L)
                 lua_pushvalue(L, -1 - results); // function is right before results
             else
                 lua_xmove(L1, L, 1); // function is at top of L1
+
+            // ServerLua: We don't want to give access to C functions,
+            //  some of them are intentionally inaccessible to users but may be
+            //  on the call stack (like `LLTimers:_tick()`).
+            const lua_TValue *f_tv = luaA_toobject(L, -1);
+            Closure *f = clvalue(f_tv);
+            if (f->isC && LUAU_IS_SL_VM(L))
+            {
+                lua_pushnil(L);
+                lua_replace(L, -2);
+            }
             results++;
             break;
-
+        }
         case 'a':
             lua_pushinteger(L, ar.nparams);
             lua_pushboolean(L, ar.isvararg);
