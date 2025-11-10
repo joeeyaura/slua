@@ -1913,11 +1913,13 @@ static bool try_fix_table(const LuaTable * h)
     for (int content_idx=0; contents_fixed && content_idx < h->sizearray; ++content_idx)
     {
         const TValue *content_val = &h->array[content_idx];
-        if (iscollectable(content_val) && !isfixed(gcvalue(content_val)))
+        if (iscollectable(content_val) && !isfixed(gcvalue(content_val)) && gcvalue(content_val) != obj2gco(h))
         {
             // If the table had anything that was collectable, yet not fixed,
             // we shouldn't fix this table. It would make it impossible for the
             // GC to reach its reference.
+            // Self-references are allowed since fixing the table will also
+            // implicitly fix any references to itself.
             contents_fixed = false;
             break;
         }
@@ -1927,9 +1929,10 @@ static bool try_fix_table(const LuaTable * h)
         const LuaNode *content_node = &h->node[content_idx];
         const TValue *content_val = gval(content_node);
         const TKey *content_key = gkey(content_node);
-        // Neither key nor val may be markable for collection
-        if ((iscollectable(content_val) && !isfixed(gcvalue(content_val))) ||
-            (iscollectable(content_key) && !isfixed(gcvalue(content_key))))
+        // Neither key nor val may be markable for collection, except self-references
+        // which are safe since fixing the table will also implicitly fix them.
+        if ((iscollectable(content_val) && !isfixed(gcvalue(content_val)) && gcvalue(content_val) != obj2gco(h)) ||
+            (iscollectable(content_key) && !isfixed(gcvalue(content_key)) && gcvalue(content_key) != obj2gco(h)))
         {
             // If the table had anything that was collectable, yet not fixed,
             // we shouldn't fix this table. It would make it impossible for the
@@ -2039,8 +2042,13 @@ CLANG_NOOPT void GCC_NOOPT lua_fixallcollectable(lua_State *L)
     luaM_visitgco(L, &ctx, gcfixingvisitor);
 
     // Try to fix any userdata metatables we may know about
-    ASSERT_IN_DBG(try_fix_table(L->global->udatamt[UTAG_UUID]));
-    ASSERT_IN_DBG(try_fix_table(L->global->udatamt[UTAG_QUATERNION]));
+    for (auto utag : {UTAG_UUID, UTAG_QUATERNION, UTAG_DETECTED_EVENT, UTAG_LLEVENTS, UTAG_LLTIMERS})
+    {
+        if (auto *tab = L->global->udatamt[utag])
+        {
+            ASSERT_IN_DBG(try_fix_table(tab));
+        }
+    }
 
     // Do a second pass and only try to fix userdatas that we know have fixed metatables
     luaM_visitgco(L, L, gcudatafixingvisitor);
