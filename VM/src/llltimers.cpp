@@ -125,11 +125,6 @@ static int lltimers_on(lua_State *L)
     if (seconds < 0.0)
         luaL_errorL(L, "timer interval must be positive or 0");
 
-    // Clamp very small non-zero intervals to prevent division overflow in catchup logic
-    constexpr double MIN_TIMER_INTERVAL = 1e-6;
-    if (seconds > 0.0 && seconds < MIN_TIMER_INTERVAL)
-        seconds = MIN_TIMER_INTERVAL;
-
     // Get current time
     double current_time = sl_state->clockProvider ? sl_state->clockProvider(L) : 0.0;
 
@@ -590,36 +585,37 @@ static int lltimers_tick_cont(lua_State *L, [[maybe_unused]]int status)
             // Note that we do this BEFORE the timer is ever run.
             // This ensures that handler runtime has no effect on
             // when the handler will be invoked next.
-            double new_next_run;
             bool did_clamp = false;
 
-            // For ASAP timers, always schedule for current time.
-            // There's no schedule to fall behind - they just want to run "ASAP"
-            if (interval == 0)
-            {
-                new_next_run = start_time;
-            }
-            else
-            {
-                // Normal scheduling with clamping logic for defined intervals.
-                const double MAX_CATCHUP_TIME = 2.0;
-                double next_scheduled = next_run + interval;
+            // Correctly handles scheduling an event for _at least immediately after_
+            // the current time, even if addition of a tiny interval underflows.
+            // For interval=0: use start_time to prevent re-trigger without clock advance
+            // For other intervals: use next_run to maintain rhythm
+            double next_scheduled = std::max(
+                std::nextafter(interval == 0.0 ? start_time : next_run, INFINITY),
+                (interval != 0.0) ? next_run + interval : 0.0
+            );
+            double new_next_run = next_scheduled;
 
-                // Check if the next scheduled time would still be >2s behind current time
-                if (start_time - next_scheduled > MAX_CATCHUP_TIME)
+            // Catchup logic with overflow protection
+            constexpr double MAX_CATCHUP_TIME = 2.0;
+            if (interval > 0 && start_time - next_scheduled > MAX_CATCHUP_TIME)
+            {
+                // Skip ahead to next interval after current time
+                // This prevents spiral of death from excessive catch-up
+                double time_behind = start_time - next_run;
+                double intervals_to_skip = std::ceil(time_behind / interval);
+
+                if (!std::isfinite(intervals_to_skip))
                 {
-                    // Skip ahead to next interval after current time
-                    // This prevents spiral of death from excessive catch-up
-                    double time_behind = start_time - next_run;
-                    double intervals_to_skip = ceil(time_behind / interval);
-                    new_next_run = next_run + (intervals_to_skip * interval);
-                    did_clamp = true;
+                    // Division overflowed to infinity - interval is extremely small, treat as ASAP
+                    new_next_run = std::nextafter(start_time, INFINITY);
                 }
                 else
                 {
-                    // Normal absolute scheduling - maintain rhythm
-                    new_next_run = next_scheduled;
+                    new_next_run = next_run + (intervals_to_skip * interval);
                 }
+                did_clamp = true;
             }
 
             // Update actual next run time (may be clamped)

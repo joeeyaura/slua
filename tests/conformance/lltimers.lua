@@ -153,14 +153,17 @@ local zero_continuous_handler = LLTimers:on(0, function()
 end)
 
 -- Fire several times with small time advances
+-- Zero interval uses nextafter(next_run) so it fires once per _tick()
 for i = 1, 5 do
     incrementclock(0.01)
     LLTimers:_tick()
 end
+-- This should not fire, we didn't increment the time!
+LLTimers:_tick()
 assert(zero_continuous_count == 5, "Zero-interval timer should fire 5 times")
 
 -- Now advance past what would be the 2-second clamping threshold for interval>0 timers
--- For interval=0, this just schedules for "now" (ASAP semantics)
+-- For interval=0: uses nextafter(next_run), no catchup needed
 -- This used to trigger division by zero: ceil(time_behind / 0)
 setclock(53.0)  -- More than 2 seconds later
 LLTimers:_tick()
@@ -169,34 +172,37 @@ assert(zero_continuous_count == 6, "Zero-interval timer should continue after la
 -- Verify it continues working normally
 incrementclock(0.01)
 LLTimers:_tick()
-assert(zero_continuous_count == 7, "Zero-interval timer should still work after clamp")
+assert(zero_continuous_count == 7, "Zero-interval timer should still work after time jump")
 
 LLTimers:off(zero_continuous_handler)
 
--- Test very small non-zero intervals get clamped to minimum (1e-6)
+-- Test very small non-zero intervals use nextafter (no clamping)
 setclock(60.0)
 local tiny_count = 0
-local tiny_scheduled_times = {}
 local tiny_handler = LLTimers:on(1e-308, function(scheduled_time)
     tiny_count += 1
-    table.insert(tiny_scheduled_times, scheduled_time)
 end)
 
--- Fire first time
-setclock(60.000002)  -- 2 microseconds later, should fire (clamped to 1e-6)
-LLTimers:_tick()
-assert(tiny_count == 1, "Tiny interval timer should fire")
+-- Fire several times with small time advances
+-- Interval 1e-308 is so small that next_run + interval underflows to next_run
+-- So nextafter(next_run) is used instead, ensuring forward progress
+for i = 1, 5 do
+    incrementclock(0.01)
+    LLTimers:_tick()
+end
+assert(tiny_count == 5, "Tiny interval timer should fire multiple times")
 
--- Advance by the clamped minimum interval (1e-6 = 1 microsecond)
-setclock(60.000003)  -- Another microsecond
+-- Now test catchup overflow scenario
+-- Advance >2 seconds, which would cause ceil(time_behind / 1e-308) to overflow
+-- The implementation should detect overflow and use nextafter(start_time) instead
+setclock(63.0)  -- More than 2 seconds later
 LLTimers:_tick()
-assert(tiny_count == 2, "Tiny interval should be clamped to minimum")
+assert(tiny_count == 6, "Tiny interval timer should handle catchup overflow")
 
--- Verify the interval is actually clamped by checking schedule spacing
--- The difference should be ~1e-6, not 1e-308
-local interval_used = tiny_scheduled_times[2] - tiny_scheduled_times[1]
-assert(interval_used > 9e-7, "Clamped interval should be ~1e-6")
-assert(interval_used < 2e-6, "Clamped interval should be ~1e-6")
+-- Verify it continues working after overflow
+incrementclock(0.01)
+LLTimers:_tick()
+assert(tiny_count == 7, "Tiny interval timer should continue after overflow")
 
 LLTimers:off(tiny_handler)
 
