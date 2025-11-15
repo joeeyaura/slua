@@ -2864,35 +2864,30 @@ extern "C" void register_perm_checked(lua_State *L, int perms_idx, const char *c
 // Forward declaration
 static void scavenge_general_perms_internal(lua_State *L, bool forUnpersist, const std::string& prefix, int perms_idx= -1);
 
-/// Scans and registers the metatable of an object (if it has one and it's not a type metatable)
-static void scan_object_metatable(lua_State *L, bool forUnpersist, const std::string& prefix, int perms_idx) {
-                                                      // ... perms obj_table obj
-    if (lua_type(L, -1) != LUA_TTABLE || !lua_getmetatable(L, -1)) {
-        return;
-    }
-                                                   // ... perms obj_table obj mt
+/// Scans and registers a metatable (expects metatable already on stack)
+static void scan_metatable(lua_State *L, bool forUnpersist, const std::string& prefix, int perms_idx) {
+                                                      // ... perms obj_table mt
 
     // Register the metatable as a permanent
     std::string mt_name = prefix + "/mt";
 
     if (forUnpersist) {
-        lua_pushstring(L, mt_name.c_str());   // ... perms obj_table obj mt name
-        lua_pushvalue(L, -2);              // ... perms obj_table obj mt name mt
+        lua_pushstring(L, mt_name.c_str());      // ... perms obj_table mt name
+        lua_pushvalue(L, -2);                    // ... perms obj_table mt name mt
         eris_assert(lua_type(L, -2) == LUA_TSTRING);
         eris_assert(lua_type(L, -1) == LUA_TTABLE);
     } else {
-        lua_pushvalue(L, -1);                   // ... perms obj_table obj mt mt
-        lua_pushstring(L, mt_name.c_str());// ... perms obj_table obj mt mt name
+        lua_pushvalue(L, -1);                    // ... perms obj_table mt mt
+        lua_pushstring(L, mt_name.c_str());      // ... perms obj_table mt mt name
         eris_assert(lua_type(L, -1) == LUA_TSTRING);
         eris_assert(lua_type(L, -2) == LUA_TTABLE);
     }
     register_perm_checked(L, perms_idx, mt_name.c_str());
-                                                   // ... perms obj_table obj mt
+                                                      // ... perms obj_table mt
 
     // Recursively scan the metatable's contents
     scavenge_general_perms_internal(L, forUnpersist, mt_name, perms_idx);
-
-    lua_pop(L, 1);                                    // ... perms obj_table obj
+                                                      // ... perms obj_table mt
 }
 
 static void scavenge_general_perms_internal(lua_State *L, bool forUnpersist, const std::string& prefix, int perms_idx) {
@@ -2904,10 +2899,16 @@ static void scavenge_general_perms_internal(lua_State *L, bool forUnpersist, con
 
     while (lua_next(L, -2)) {
         /* ... perms glob_tab k v */
-        // We're only interested in entries that are string->closure
         const auto val_type = lua_type(L, -1);
         const auto key_type = lua_type(L, -2);
         if (key_type != LUA_TSTRING) {
+            lua_pop(L, 1);
+            continue;
+        }
+        const char *key = lua_tostring(L, -2);
+        // self-referential __index is typical for metatables.
+        if (!strcmp("__index", key) && lua_rawequal(L, -1, -3))
+        {
             lua_pop(L, 1);
             continue;
         }
@@ -2916,7 +2917,6 @@ static void scavenge_general_perms_internal(lua_State *L, bool forUnpersist, con
             Closure *cl = clvalue(luaA_toobject(L, -1));
             // We only need to be careful about C functions, so let's look for those.
             if (cl->isC) {
-                const char *key = lua_tostring(L, -2);
                 std::string perm_name = prefix + "/" + key;
 
                 if (forUnpersist) {
@@ -2939,8 +2939,6 @@ static void scavenge_general_perms_internal(lua_State *L, bool forUnpersist, con
             }
         }
         else if (val_type == LUA_TTABLE) {
-            const char *key = lua_tostring(L, -2);
-
             // Skip _G since it's a self-reference to globals - we're already scanning it
             // (it's already a permanent as globals_base)
             if (prefix == "g" && strcmp(key, "_G") == 0) {
@@ -2992,8 +2990,10 @@ static void scavenge_general_perms_internal(lua_State *L, bool forUnpersist, con
                                                     /* ... perms glob_tab k v */
 
             // Scan the table's metatable if it has one
-            scan_object_metatable(L, forUnpersist, perm_name, perms_idx);
-                                                    /* ... perms glob_tab k v */
+            if (lua_getmetatable(L, -1)) {          /* ... perms glob_tab k v mt */
+                scan_metatable(L, forUnpersist, perm_name, perms_idx);
+                lua_pop(L, 1);                      /* ... perms glob_tab k v */
+            }
 
             // Recurse into table to find nested objects (only at top level to avoid deep nesting)
             if (prefix == "g") {
@@ -3041,17 +3041,18 @@ static void scavenge_sl_vm_internals(lua_State *L, bool forUnpersist) {
     // Mark the methods on internal userdata functions as internal
     for (int i=0; i<LUA_UTAG_LIMIT; ++i) {
         LuaTable *udata_mt = L->global->udatamt[i];
-        if (udata_mt != nullptr) {
-            // Do it by tag number in case names change
-            std::string mt_prefix = "udata/" + std::to_string(i) + "/mt";
+        if (udata_mt == nullptr)
+            continue;
 
-            TValue udata_mt_tv;
-            sethvalue(L, &udata_mt_tv, udata_mt);
-            luaA_pushobject(L, &udata_mt_tv);           /* ... perms udata_mt */
+        // Do it by tag number in case names change
+        std::string mt_prefix = "udata/" + std::to_string(i);
 
-            scavenge_general_perms_internal(L, forUnpersist, mt_prefix);
-            lua_pop(L, 1);                                       /* ... perms */
-        }
+        TValue udata_mt_tv;
+        sethvalue(L, &udata_mt_tv, udata_mt);
+        luaA_pushobject(L, &udata_mt_tv);           /* ... perms udata_mt */
+
+        scan_metatable(L, forUnpersist, mt_prefix, perms_idx);
+        lua_pop(L, 1);                                       /* ... perms */
     }
 
     // Scan type metatables
@@ -3062,25 +3063,11 @@ static void scavenge_sl_vm_internals(lua_State *L, bool forUnpersist) {
 
         TValue mt_tv;
         sethvalue(L, &mt_tv, L->global->mt[type_idx]);
-        luaA_pushobject(L, &mt_tv); /* ... perms type_mt */
+        luaA_pushobject(L, &mt_tv);
 
-        // Generate the metatable name: "type/TYPENAME/mt"
-        const char *type_name = lua_typename(L, type_idx);
-        std::string mt_name = std::string("type/") + type_name + "/mt";
+        std::string mt_name = std::string("type/") + lua_typename(L, type_idx);
 
-        // Register the metatable itself as a permanent
-        if (forUnpersist) {
-            lua_pushstring(L, mt_name.c_str());     /* ... perms type_mt name */
-            lua_pushvalue(L, -2);                /* ... perms type_mt name mt */
-        } else {
-            lua_pushvalue(L, -1);                     /* ... perms type_mt mt */
-            lua_pushstring(L, mt_name.c_str());  /* ... perms type_mt mt name */
-        }
-        register_perm_checked(L, perms_idx, mt_name.c_str());
-                                                         /* ... perms type_mt */
-
-        // Scan its contents
-        scavenge_general_perms_internal(L, forUnpersist, mt_name);
+        scan_metatable(L, forUnpersist, mt_name, perms_idx);
         lua_pop(L, 1);
     }
 
