@@ -44,14 +44,15 @@ LUAU_FASTFLAGVARIABLE(LuauCollapseShouldNotCrash)
 LUAU_FASTFLAGVARIABLE(LuauDontDynamicallyCreateRedundantSubtypeConstraints)
 LUAU_FASTFLAGVARIABLE(LuauExtendSealedTableUpperBounds)
 LUAU_FASTFLAG(LuauReduceSetTypeStackPressure)
-LUAU_FASTFLAG(LuauExplicitSkipBoundTypes)
 LUAU_FASTFLAG(DebugLuauStringSingletonBasedOnQuotes)
 LUAU_FASTFLAG(LuauPushTypeConstraint2)
 LUAU_FASTFLAGVARIABLE(LuauScopedSeenSetInLookupTableProp)
 LUAU_FASTFLAGVARIABLE(LuauIterableBindNotUnify)
 LUAU_FASTFLAGVARIABLE(LuauAvoidOverloadSelectionForFunctionType)
 LUAU_FASTFLAG(LuauSimplifyIntersectionNoTreeSet)
-LUAU_FASTFLAG(LuauPushTypeConstraintLambdas)
+LUAU_FASTFLAG(LuauInstantiationUsesGenericPolarity)
+LUAU_FASTFLAG(LuauPushTypeConstraintLambdas2)
+LUAU_FASTFLAGVARIABLE(LuauPushTypeConstriantAlwaysCompletes)
 
 namespace Luau
 {
@@ -341,7 +342,7 @@ struct InfiniteTypeFinder : TypeOnceVisitor
     bool foundInfiniteType = false;
 
     explicit InfiniteTypeFinder(ConstraintSolver* solver, const InstantiationSignature& signature, NotNull<Scope> scope)
-        : TypeOnceVisitor("InfiniteTypeFinder", FFlag::LuauExplicitSkipBoundTypes)
+        : TypeOnceVisitor("InfiniteTypeFinder", /* skipBoundTypes */ true)
         , solver(solver)
         , signature(signature)
         , scope(scope)
@@ -670,7 +671,7 @@ struct TypeSearcher : TypeVisitor
     }
 
     explicit TypeSearcher(TypeId needle, Polarity initialPolarity)
-        : TypeVisitor("TypeSearcher", FFlag::LuauExplicitSkipBoundTypes)
+        : TypeVisitor("TypeSearcher", /* skipBoundTypes */ true)
         , needle(needle)
         , current(initialPolarity)
     {
@@ -1574,14 +1575,39 @@ bool ConstraintSolver::tryDispatch(const FunctionCallConstraint& c, NotNull<cons
 
     if (!u2.genericSubstitutions.empty() || !u2.genericPackSubstitutions.empty())
     {
-        std::optional<TypePackId> subst = instantiate2(arena, std::move(u2.genericSubstitutions), std::move(u2.genericPackSubstitutions), result);
-        if (!subst)
+        if (FFlag::LuauInstantiationUsesGenericPolarity)
         {
-            reportError(CodeTooComplex{}, constraint->location);
-            result = builtinTypes->errorTypePack;
+            Subtyping subtyping{builtinTypes, arena, simplifier, normalizer, typeFunctionRuntime, NotNull{&iceReporter}};
+            std::optional<TypePackId> subst =
+                instantiate2(
+                    arena, 
+                    std::move(u2.genericSubstitutions),
+                    std::move(u2.genericPackSubstitutions), 
+                    NotNull{&subtyping},
+                    constraint->scope,
+                    result
+                );
+            if (!subst)
+            {
+                reportError(CodeTooComplex{}, constraint->location);
+                result = builtinTypes->errorTypePack;
+            }
+            else
+                result = *subst;
         }
         else
-            result = *subst;
+        {
+
+            std::optional<TypePackId> subst =
+                instantiate2_DEPRECATED(arena, std::move(u2.genericSubstitutions), std::move(u2.genericPackSubstitutions), result);
+            if (!subst)
+            {
+                reportError(CodeTooComplex{}, constraint->location);
+                result = builtinTypes->errorTypePack;
+            }
+            else
+                result = *subst;
+        }
 
         if (c.result != result)
             emplaceTypePack<BoundTypePack>(asMutable(c.result), result);
@@ -1635,7 +1661,7 @@ struct ContainsGenerics : public TypeOnceVisitor
     NotNull<DenseHashSet<const void*>> generics;
 
     explicit ContainsGenerics(NotNull<DenseHashSet<const void*>> generics)
-        : TypeOnceVisitor("ContainsGenerics", FFlag::LuauExplicitSkipBoundTypes)
+        : TypeOnceVisitor("ContainsGenerics", /* skipBoundTypes */ true)
         , generics{generics}
     {
     }
@@ -1746,7 +1772,7 @@ bool ConstraintSolver::tryDispatch(const FunctionCheckConstraint& c, NotNull<con
     // We don't attempt to perform bidirectional inference on the self type.
     const size_t typeOffset = c.callSite->self ? 1 : 0;
 
-    if (FFlag::LuauPushTypeConstraintLambdas && FFlag::LuauPushTypeConstraint2)
+    if (FFlag::LuauPushTypeConstraintLambdas2 && FFlag::LuauPushTypeConstraint2) 
     {
         Subtyping subtyping{builtinTypes, arena, simplifier, normalizer, typeFunctionRuntime, NotNull{&iceReporter}};
 
@@ -1755,40 +1781,37 @@ bool ConstraintSolver::tryDispatch(const FunctionCheckConstraint& c, NotNull<con
             TypeId expectedArgTy = follow(expectedArgs[i + typeOffset]);
             AstExpr* expr = unwrapGroup(c.callSite->args.data[i]);
 
-            if (isLiteral(expr))
-            {
-                PushTypeResult result =
-                    pushTypeInto(c.astTypes, c.astExpectedTypes, NotNull{this}, constraint, NotNull{&u2}, NotNull{&subtyping}, expectedArgTy, expr);
+            PushTypeResult result =
+                pushTypeInto(c.astTypes, c.astExpectedTypes, NotNull{this}, constraint, NotNull{&u2}, NotNull{&subtyping}, expectedArgTy, expr);
 
-                // Consider:
-                //
-                //  local Direction = { Left = 1, Right = 2 }
-                //  type Direction = keyof<Direction>
-                //
-                //  local function move(dirs: { Direction }) --[[...]] end
-                //
-                //  move({ "Left", "Right", "Left", "Right" })
-                //
-                // We need `keyof<Direction>` to reduce prior to inferring that the
-                // arguments to `move` must generalize to their lower bounds. This
-                // is how we ensure that ordering.
-                if (!force && !result.incompleteTypes.empty())
+            // Consider:
+            //
+            //  local Direction = { Left = 1, Right = 2 }
+            //  type Direction = keyof<Direction>
+            //
+            //  local function move(dirs: { Direction }) --[[...]] end
+            //
+            //  move({ "Left", "Right", "Left", "Right" })
+            //
+            // We need `keyof<Direction>` to reduce prior to inferring that the
+            // arguments to `move` must generalize to their lower bounds. This
+            // is how we ensure that ordering.
+            if (!force && !result.incompleteTypes.empty())
+            {
+                for (const auto& [newExpectedTy, newTargetTy, newExpr] : result.incompleteTypes)
                 {
-                    for (const auto& [newExpectedTy, newTargetTy, newExpr] : result.incompleteTypes)
-                    {
-                        auto addition = pushConstraint(
-                            constraint->scope,
-                            constraint->location,
-                            PushTypeConstraint{
-                                newExpectedTy,
-                                newTargetTy,
-                                /* astTypes */ c.astTypes,
-                                /* astExpectedTypes */ c.astExpectedTypes,
-                                /* expr */ NotNull{newExpr},
-                            }
-                        );
-                        inheritBlocks(constraint, addition);
-                    }
+                    auto addition = pushConstraint(
+                        constraint->scope,
+                        constraint->location,
+                        PushTypeConstraint{
+                            newExpectedTy,
+                            newTargetTy,
+                            /* astTypes */ c.astTypes,
+                            /* astExpectedTypes */ c.astExpectedTypes,
+                            /* expr */ NotNull{newExpr},
+                        }
+                    );
+                    inheritBlocks(constraint, addition);
                 }
             }
         }
@@ -2149,7 +2172,7 @@ struct BlockedTypeFinder : TypeOnceVisitor
     std::optional<TypeId> blocked;
 
     BlockedTypeFinder()
-        : TypeOnceVisitor("ContainsGenerics_DEPRECATED", FFlag::LuauExplicitSkipBoundTypes)
+        : TypeOnceVisitor("ContainsGenerics_DEPRECATED", /* skipBoundTypes */ true)
     {
     }
 
@@ -2902,7 +2925,7 @@ bool ConstraintSolver::tryDispatch(const PushTypeConstraint& c, NotNull<const Co
         inheritBlocks(constraint, addition);
     }
 
-    return false;
+    return FFlag::LuauPushTypeConstriantAlwaysCompletes;
 }
 
 bool ConstraintSolver::tryDispatchIterableTable(TypeId iteratorTy, const IterableConstraint& c, NotNull<const Constraint> constraint, bool force)
@@ -3521,7 +3544,7 @@ struct Blocker : TypeOnceVisitor
     bool blocked = false;
 
     explicit Blocker(NotNull<ConstraintSolver> solver, NotNull<const Constraint> constraint)
-        : TypeOnceVisitor("Blocker", FFlag::LuauExplicitSkipBoundTypes)
+        : TypeOnceVisitor("Blocker", /* skipBoundTypes */ true)
         , solver(solver)
         , constraint(constraint)
     {

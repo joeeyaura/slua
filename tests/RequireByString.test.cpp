@@ -715,13 +715,6 @@ TEST_CASE_FIXTURE(ReplWithPathFixture, "AliasNotParsedIfConfigsAmbiguous")
     assertOutputContainsAll({"false", "could not resolve alias \"dep\" (ambiguous configuration file)"});
 }
 
-TEST_CASE_FIXTURE(ReplWithPathFixture, "AliasNotParsedIfLuauConfigTimesOut" * doctest::timeout(5))
-{
-    std::string path = getLuauDirectory(PathType::Relative) + "/tests/require/config_tests/config_luau_timeout/requirer";
-    runProtectedRequire(path);
-    assertOutputContainsAll({"false", "configuration execution timed out"});
-}
-
 TEST_CASE_FIXTURE(ReplWithPathFixture, "CannotRequireConfigLuau")
 {
     std::string path = getLuauDirectory(PathType::Relative) + "/tests/require/config_tests/config_cannot_be_required/requirer";
@@ -865,6 +858,58 @@ TEST_CASE_FIXTURE(ReplWithPathFixture, "RequireVector")
     runProtectedRequire(path);
     // ServerLua: use our custom vector __tostring() result
     assertOutputContainsAll({"true", "<1, 2, 3>"});
+}
+
+TEST_CASE_FIXTURE(ReplWithPathFixture, "RequireChainedAliasesSuccess")
+{
+    {
+        std::string path =
+            getLuauDirectory(PathType::Relative) + "/tests/require/config_tests/with_config/chained_aliases/subdirectory/successful_requirer";
+        runProtectedRequire(path);
+        assertOutputContainsAll({"true", "result from inner_dependency", "result from outer_dependency"});
+    }
+    {
+        std::string path =
+            getLuauDirectory(PathType::Relative) + "/tests/require/config_tests/with_config_luau/chained_aliases/subdirectory/successful_requirer";
+        runProtectedRequire(path);
+        assertOutputContainsAll({"true", "result from inner_dependency", "result from outer_dependency"});
+    }
+}
+
+TEST_CASE_FIXTURE(ReplWithPathFixture, "RequireChainedAliasesFailureCyclic")
+{
+    {
+        std::string path =
+            getLuauDirectory(PathType::Relative) + "/tests/require/config_tests/with_config/chained_aliases/subdirectory/failing_requirer_cyclic";
+        runProtectedRequire(path);
+        assertOutputContainsAll(
+            {"false", "error requiring module \"@cyclicentry\": detected alias cycle (@cyclic1 -> @cyclic2 -> @cyclic3 -> @cyclic1)"}
+        );
+    }
+    {
+        std::string path = getLuauDirectory(PathType::Relative) +
+                           "/tests/require/config_tests/with_config_luau/chained_aliases/subdirectory/failing_requirer_cyclic";
+        runProtectedRequire(path);
+        assertOutputContainsAll(
+            {"false", "error requiring module \"@cyclicentry\": detected alias cycle (@cyclic1 -> @cyclic2 -> @cyclic3 -> @cyclic1)"}
+        );
+    }
+}
+
+TEST_CASE_FIXTURE(ReplWithPathFixture, "RequireChainedAliasesFailureMissing")
+{
+    {
+        std::string path =
+            getLuauDirectory(PathType::Relative) + "/tests/require/config_tests/with_config/chained_aliases/subdirectory/failing_requirer_missing";
+        runProtectedRequire(path);
+        assertOutputContainsAll({"false", "error requiring module \"@brokenchain\": @missing is not a valid alias"});
+    }
+    {
+        std::string path = getLuauDirectory(PathType::Relative) +
+                           "/tests/require/config_tests/with_config_luau/chained_aliases/subdirectory/failing_requirer_missing";
+        runProtectedRequire(path);
+        assertOutputContainsAll({"false", "error requiring module \"@brokenchain\": @missing is not a valid alias"});
+    }
 }
 
 TEST_SUITE_END();

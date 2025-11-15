@@ -19,8 +19,6 @@
 #include <string.h>
 #include <unordered_set>
 
-LUAU_FASTFLAG(LuauResumeFix)
-
 /*
  * This file contains most implementations of core Lua APIs from lua.h.
  *
@@ -848,6 +846,16 @@ int lua_rawgeti(lua_State* L, int idx, int n)
     return ttype(L->top - 1);
 }
 
+int lua_rawgetptagged(lua_State* L, int idx, void* p, int tag)
+{
+    luaC_threadbarrier(L);
+    StkId t = index2addr(L, idx);
+    api_check(L, ttistable(t));
+    setobj2s(L, L->top, luaH_getp(hvalue(t), p, tag));
+    api_incr_top(L);
+    return ttype(L->top - 1);
+}
+
 void lua_createtable(lua_State* L, int narray, int nrec)
 {
     luaC_checkGC(L);
@@ -983,6 +991,18 @@ void lua_rawseti(lua_State* L, int idx, int n)
     if (hvalue(o)->readonly)
         luaG_readonlyerror(L);
     setobj2t(L, hvalue(o), luaH_setnum(L, hvalue(o), n), L->top - 1);
+    luaC_barriert(L, hvalue(o), L->top - 1);
+    L->top--;
+}
+
+void lua_rawsetptagged(lua_State* L, int idx, void* p, int tag)
+{
+    api_checknelems(L, 1);
+    StkId o = index2addr(L, idx);
+    api_check(L, ttistable(o));
+    if (hvalue(o)->readonly)
+        luaG_readonlyerror(L);
+    setobj2t(L, hvalue(o), luaH_setp(L, hvalue(o), p, tag), L->top - 1);
     luaC_barriert(L, hvalue(o), L->top - 1);
     L->top--;
 }
@@ -1146,17 +1166,7 @@ int lua_cpcall(lua_State* L, lua_CFunction func, void* ud)
     c.func = func;
     c.ud = ud;
 
-    if (FFlag::LuauResumeFix)
-    {
-        return luaD_pcall(L, f_Ccall, &c, savestack(L, L->top), 0);
-    }
-    else
-    {
-        int status = luaD_pcall(L, f_Ccall, &c, savestack(L, L->top), 0);
-
-        adjustresults(L, 0);
-        return status;
-    }
+    return luaD_pcall(L, f_Ccall, &c, savestack(L, L->top), 0);
 }
 
 int lua_status(lua_State* L)

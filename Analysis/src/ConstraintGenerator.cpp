@@ -40,14 +40,11 @@ LUAU_FASTFLAG(DebugLuauMagicTypes)
 LUAU_FASTINTVARIABLE(LuauPrimitiveInferenceInTableLimit, 500)
 LUAU_FASTFLAG(LuauEmplaceNotPushBack)
 LUAU_FASTFLAG(LuauReduceSetTypeStackPressure)
-LUAU_FASTFLAG(LuauExplicitSkipBoundTypes)
 LUAU_FASTFLAG(DebugLuauStringSingletonBasedOnQuotes)
-LUAU_FASTFLAGVARIABLE(LuauInstantiateResolvedTypeFunctions)
 LUAU_FASTFLAGVARIABLE(LuauPushTypeConstraint2)
 LUAU_FASTFLAGVARIABLE(LuauEGFixGenericsList)
 LUAU_FASTFLAGVARIABLE(LuauNumericUnaryOpsDontProduceNegationRefinements)
 LUAU_FASTFLAGVARIABLE(LuauInitializeDefaultGenericParamsAtProgramPoint)
-LUAU_FASTFLAGVARIABLE(LuauNoConstraintGenRecursionLimitIce)
 LUAU_FASTFLAGVARIABLE(LuauCacheDuplicateHasPropConstraints)
 LUAU_FASTFLAGVARIABLE(LuauNoMoreComparisonTypeFunctions)
 LUAU_FASTFLAG(LuauNoOrderingTypeFunctions)
@@ -55,7 +52,8 @@ LUAU_FASTFLAGVARIABLE(LuauDontReferenceScopePtrFromHashTable)
 LUAU_FASTFLAG(LuauBuiltinTypeFunctionsArentGlobal)
 LUAU_FASTFLAGVARIABLE(LuauMetatableAvoidSingletonUnion)
 LUAU_FASTFLAGVARIABLE(LuauAddRefinementToAssertions)
-LUAU_FASTFLAG(LuauPushTypeConstraintLambdas)
+LUAU_FASTFLAG(LuauPushTypeConstraintLambdas2)
+LUAU_FASTFLAGVARIABLE(LuauIncludeExplicitGenericPacks)
 
 namespace Luau
 {
@@ -145,7 +143,7 @@ struct HasFreeType : TypeOnceVisitor
     bool result = false;
 
     HasFreeType()
-        : TypeOnceVisitor("TypeOnceVisitor", FFlag::LuauExplicitSkipBoundTypes)
+        : TypeOnceVisitor("TypeOnceVisitor", /* skipBoundTypes */ true)
     {
     }
 
@@ -619,7 +617,7 @@ struct FindSimplificationBlockers : TypeOnceVisitor
     bool found = false;
 
     FindSimplificationBlockers()
-        : TypeOnceVisitor("FindSimplificationBlockers", FFlag::LuauExplicitSkipBoundTypes)
+        : TypeOnceVisitor("FindSimplificationBlockers", /* skipBoundTypes */ true)
     {
     }
 
@@ -1059,34 +1057,25 @@ ControlFlow ConstraintGenerator::visitBlockWithoutChildScope(const ScopePtr& sco
 
 ControlFlow ConstraintGenerator::visit(const ScopePtr& scope, AstStat* stat)
 {
-    std::optional<RecursionCounter> counter;
+    RecursionCounter counter{&recursionCount};
     std::optional<RecursionLimiter> limiter;
 
-    if (FFlag::LuauNoConstraintGenRecursionLimitIce)
+    if (FFlag::LuauIndividualRecursionLimits)
     {
-        counter.emplace(&recursionCount);
-
-        if (FFlag::LuauIndividualRecursionLimits)
+        if (recursionCount >= DFInt::LuauConstraintGeneratorRecursionLimit)
         {
-            if (recursionCount >= DFInt::LuauConstraintGeneratorRecursionLimit)
-            {
-                reportCodeTooComplex(stat->location);
-                return ControlFlow::None;
-            }
-        }
-        else
-        {
-            if (recursionCount >= FInt::LuauCheckRecursionLimit)
-            {
-                reportCodeTooComplex(stat->location);
-                return ControlFlow::None;
-            }
+            reportCodeTooComplex(stat->location);
+            return ControlFlow::None;
         }
     }
-    else if (FFlag::LuauIndividualRecursionLimits)
-        limiter.emplace("ConstraintGenerator", &recursionCount, DFInt::LuauConstraintGeneratorRecursionLimit);
     else
-        limiter.emplace("ConstraintGenerator", &recursionCount, FInt::LuauCheckRecursionLimit);
+    {
+        if (recursionCount >= FInt::LuauCheckRecursionLimit)
+        {
+            reportCodeTooComplex(stat->location);
+            return ControlFlow::None;
+        }
+    }
 
     if (auto s = stat->as<AstStatBlock>())
         return visit(scope, s);
@@ -2096,10 +2085,6 @@ ControlFlow ConstraintGenerator::visit(const ScopePtr& scope, AstStatDeclareExte
 
     if (declaredExternType->indexer)
     {
-        std::optional<RecursionCounter> counter;
-        if (!FFlag::LuauNoConstraintGenRecursionLimitIce)
-            counter.emplace(&recursionCount);
-
         if (FFlag::LuauIndividualRecursionLimits && recursionCount >= DFInt::LuauConstraintGeneratorRecursionLimit)
         {
             reportCodeTooComplex(declaredExternType->indexer->location);
@@ -3636,7 +3621,7 @@ Inference ConstraintGenerator::check(const ScopePtr& scope, AstExprTable* expr, 
     TypeIds valuesLowerBound;
 
     std::optional<Checkpoint> start{std::nullopt};
-    if (FFlag::LuauPushTypeConstraint2 && FFlag::LuauPushTypeConstraintLambdas)
+    if (FFlag::LuauPushTypeConstraint2 && FFlag::LuauPushTypeConstraintLambdas2)
         start = checkpoint(this);
 
     for (const AstExprTable::Item& item : expr->items)
@@ -3658,7 +3643,7 @@ Inference ConstraintGenerator::check(const ScopePtr& scope, AstExprTable* expr, 
             item.value,
             /* expectedType */ std::nullopt,
             /* forceSingleton */ false,
-            /* generalize */ !(FFlag::LuauPushTypeConstraint2 && FFlag::LuauPushTypeConstraintLambdas)
+            /* generalize */ !(FFlag::LuauPushTypeConstraint2 && FFlag::LuauPushTypeConstraintLambdas2)
         ).ty;
 
         if (item.key)
@@ -3688,7 +3673,7 @@ Inference ConstraintGenerator::check(const ScopePtr& scope, AstExprTable* expr, 
     }
 
     std::optional<Checkpoint> end{std::nullopt};
-    if (FFlag::LuauPushTypeConstraintLambdas)
+    if (FFlag::LuauPushTypeConstraintLambdas2)
         end = checkpoint(this);
 
     if (!indexKeyLowerBound.empty())
@@ -3734,7 +3719,7 @@ Inference ConstraintGenerator::check(const ScopePtr& scope, AstExprTable* expr, 
                 /* expr */ NotNull{expr},
             }
         );
-        if (FFlag::LuauPushTypeConstraintLambdas)
+        if (FFlag::LuauPushTypeConstraintLambdas2)
         {
             LUAU_ASSERT(start && end);
             forEachConstraint(
@@ -3923,10 +3908,19 @@ ConstraintGenerator::FunctionSignature ConstraintGenerator::checkFunctionSignatu
 
         varargPack = follow(varargPack);
         returnType = follow(returnType);
-        if (varargPack == returnType)
-            genericTypePacks = {varargPack};
+        if (FFlag::LuauIncludeExplicitGenericPacks)
+        {
+            genericTypePacks.push_back(varargPack);
+            if (varargPack != returnType)
+                genericTypePacks.push_back(returnType);
+        }
         else
-            genericTypePacks = {varargPack, returnType};
+        {
+            if (varargPack == returnType)
+                genericTypePacks = {varargPack};
+            else
+                genericTypePacks = {varargPack, returnType};
+        }
     }
     else
     {
@@ -4096,15 +4090,11 @@ TypeId ConstraintGenerator::resolveReferenceType(
             result = freshType(scope, Polarity::Mixed);
     }
 
-    if (FFlag::LuauInstantiateResolvedTypeFunctions)
+    if (is<TypeFunctionInstanceType>(follow(result)))
     {
-        if (is<TypeFunctionInstanceType>(follow(result)))
-        {
-            reportError(ty->location, UnappliedTypeFunction{});
-            addConstraint(scope, ty->location, ReduceConstraint{result});
-        }
+        reportError(ty->location, UnappliedTypeFunction{});
+        addConstraint(scope, ty->location, ReduceConstraint{result});
     }
-
 
     return result;
 }
@@ -4526,8 +4516,7 @@ void ConstraintGenerator::reportCodeTooComplex(Location location)
     if (logger)
         logger->captureGenerationError(errors.back());
 
-    if (FFlag::LuauNoConstraintGenRecursionLimitIce)
-        recursionLimitMet = true;
+    recursionLimitMet = true;
 }
 
 TypeId ConstraintGenerator::makeUnion(const ScopePtr& scope, Location location, TypeId lhs, TypeId rhs)
