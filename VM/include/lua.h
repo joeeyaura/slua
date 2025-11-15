@@ -386,6 +386,8 @@ LUA_API uintptr_t lua_encodepointer(lua_State* L, uintptr_t p);
 
 LUA_API double lua_clock();
 
+LUA_API void lua_setrandomseed(lua_State* L, uint64_t seed);
+
 LUA_API void lua_setuserdatatag(lua_State* L, int idx, int tag);
 
 typedef void (*lua_Destructor)(lua_State* L, void* userdata);

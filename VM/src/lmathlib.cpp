@@ -30,6 +30,11 @@ static void pcg32_seed(uint64_t* state, uint64_t seed)
     pcg32_random(state);
 }
 
+void lua_setrandomseed(lua_State* L, uint64_t seed)
+{
+    pcg32_seed(&L->global->rngstate, seed);
+}
+
 static int math_abs(lua_State* L)
 {
     lua_pushnumber(L, fabs(luaL_checknumber(L, 1)));
