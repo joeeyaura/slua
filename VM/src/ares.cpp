@@ -3023,15 +3023,6 @@ static void scavenge_global_perms(lua_State *L, bool forUnpersist) {
     eris_assert(top == lua_gettop(L));
 }
 
-static bool have_module(lua_State *L, const char *mod_name) {
-    eris_ifassert(int old_top = lua_gettop(L));
-    lua_getglobal(L, mod_name);
-    bool cached = !lua_isnil(L, -1);
-    lua_pop(L, 1);
-    eris_assert(old_top == lua_gettop(L));
-    return cached;
-}
-
 static void scavenge_sl_vm_internals(lua_State *L, bool forUnpersist) {
     if (!LUAU_IS_SL_VM(L))
         return;
@@ -3606,7 +3597,7 @@ eris_make_forkserver(lua_State *L) {
   lua_newtable(Lforker);                              /* Lforker: state perms */
   for (auto *proto : protos) {
     lua_pushlightuserdata(Lforker, proto);      /* Lforker: state perms proto */
-    lua_pushfstring(Lforker, "proto_%d", proto->bytecodeid);
+    lua_pushfstring(Lforker, "proto/%d", proto->bytecodeid);
                                        /* Lforker: state perms proto proto_id */
     lua_rawset(Lforker, -3);                          /* Lforker: state perms */
   }
@@ -3644,7 +3635,7 @@ eris_make_forkserver(lua_State *L) {
 
   // rebuild the perms table to work for deserialization
   for (auto *proto : protos) {
-    lua_pushfstring(Lforker, "proto_%d", proto->bytecodeid);
+    lua_pushfstring(Lforker, "proto/%d", proto->bytecodeid);
                                             /* Lforker: state uperms proto_id */
     lua_pushlightuserdata(Lforker, proto);
                                       /* Lforker: state uperms proto_id proto */
