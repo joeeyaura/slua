@@ -325,28 +325,36 @@ static int callsandboxedrequire(lua_State* L)
     {
         // Limit the globals we let `require()`d inherit to limit shenanigans
         // Some of these objects conventionally live on the user globals object.
-        static const std::vector<std::pair<const char *, int>> SL_GLOBALS = {
-            {"LLEvents", UTAG_LLEVENTS},
-            {"LLTimers", UTAG_LLTIMERS},
+        using CopyableGlobalDetails = struct CopyableGlobalDetails {
+            const char *name;
+            int type;
+            int utag;
         };
-        for (auto &to_inherit : SL_GLOBALS)
+        static const std::vector<CopyableGlobalDetails> SL_GLOBALS = {
+            {"LLEvents", LUA_TUSERDATA, UTAG_LLEVENTS},
+            {"LLTimers", LUA_TUSERDATA, UTAG_LLTIMERS},
+            // It doesn't make sense to call this function if you don't provide a `require()`
+            {"require", LUA_TFUNCTION, -1},
+        };
+        for (const auto &to_inherit : SL_GLOBALS)
         {
             // We intentionally do not look at __index,
             // it should be on the globals, we're not digging for it.
-            lua_rawgetfield(L, LUA_GLOBALSINDEX, to_inherit.first);
+            lua_rawgetfield(L, LUA_GLOBALSINDEX, to_inherit.name);
             lua_xmove(L, co, 1);
 
             // And it better be something I'd expect to be there.
-            if (!lua_touserdatatagged(co, -1, to_inherit.second))
+            if (to_inherit.type != lua_type(co, -1)
+                || (to_inherit.type == LUA_TUSERDATA && !lua_touserdatatagged(co, -1, to_inherit.utag)))
             {
                 luaL_errorL(
                     L,
                     "cannot call callsandboxedrequire() with an invalid '%s' global",
-                    to_inherit.first
+                    to_inherit.name
                 );
             }
 
-            lua_rawsetfield(co, LUA_GLOBALSINDEX, to_inherit.first);
+            lua_rawsetfield(co, LUA_GLOBALSINDEX, to_inherit.name);
         }
     }
 

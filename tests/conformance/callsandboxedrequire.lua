@@ -1,3 +1,7 @@
+function require()
+    error("don't actually call me")
+end
+
 -- Basic execution with single return value
 local result = callsandboxedrequire(function()
     return 42

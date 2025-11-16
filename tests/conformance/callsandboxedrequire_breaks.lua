@@ -1,4 +1,7 @@
 -- Break propagation in callsandboxedrequire
+function require()
+    error("don't actually call me")
+end
 
 -- Basic break propagation
 local result = callsandboxedrequire(function()
