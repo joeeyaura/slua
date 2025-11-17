@@ -3592,13 +3592,14 @@ eris_make_forkserver(lua_State *L) {
   lua_newtable(Lforker);                                    /* LForker: state */
 
   // Collect all protos reachable from the main func (should be all of them)
-  std::vector<Proto *> protos;
+  std::vector<Proto *> protos = {};
   if (lua_isLfunction(L, -1))
     gatherfunctions(protos, clvalue(luaA_toobject(L, -1))->l.p);
 
   // build the perm val -> id table for persisting
   lua_newtable(Lforker);                              /* Lforker: state perms */
   for (auto *proto : protos) {
+    if (!proto) continue;
     lua_pushlightuserdata(Lforker, proto);      /* Lforker: state perms proto */
     lua_pushfstring(Lforker, "proto/%s/%d", getstr(proto->source), proto->bytecodeid);
                                        /* Lforker: state perms proto proto_id */
@@ -3638,6 +3639,7 @@ eris_make_forkserver(lua_State *L) {
 
   // rebuild the perms table to work for deserialization
   for (auto *proto : protos) {
+    if (!proto) continue;
     lua_pushfstring(Lforker, "proto/%s/%d", getstr(proto->source), proto->bytecodeid);
                                             /* Lforker: state uperms proto_id */
     lua_pushlightuserdata(Lforker, proto);
