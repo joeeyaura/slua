@@ -148,8 +148,10 @@ LLTimers:off(zero_interval_handler)
 -- Test zero interval continues firing over multiple seconds (regression test for division-by-zero bug)
 setclock(50.0)
 local zero_continuous_count = 0
-local zero_continuous_handler = LLTimers:every(0, function()
+local zero_scheduled_times = {}
+local zero_continuous_handler = LLTimers:every(0, function(scheduled_time)
     zero_continuous_count += 1
+    table.insert(zero_scheduled_times, scheduled_time)
 end)
 
 -- Fire several times with small time advances
@@ -176,11 +178,23 @@ assert(zero_continuous_count == 7, "Zero-interval timer should still work after 
 
 LLTimers:off(zero_continuous_handler)
 
+-- Verify scheduled times match expected values
+local expected_times = {50.0, 50.011, 50.022, 50.033, 50.044, 50.055, 53.0}
+for i, expected_time in expected_times do
+    local actual_time = zero_scheduled_times[i]
+    assert(
+        math.abs(actual_time - expected_time) < 0.001,
+        `Zero-interval tick {i} should be ~{expected_time}, got {actual_time}`
+    )
+end
+
 -- Test very small non-zero intervals use nextafter (no clamping)
 setclock(60.0)
 local tiny_count = 0
+local tiny_scheduled_times = {}
 local tiny_handler = LLTimers:every(1e-308, function(scheduled_time)
     tiny_count += 1
+    table.insert(tiny_scheduled_times, scheduled_time)
 end)
 
 -- Fire several times with small time advances
@@ -205,6 +219,17 @@ LLTimers:_tick()
 assert(tiny_count == 7, "Tiny interval timer should continue after overflow")
 
 LLTimers:off(tiny_handler)
+
+-- Verify scheduled times match expected values
+-- Tiny intervals stay at 60.0 due to underflow (60.0 + 1e-308 = 60.0), then catch-up syncs to 63.0
+local tiny_expected_times = {60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 63.0}
+for i, expected_time in tiny_expected_times do
+    local actual_time = tiny_scheduled_times[i]
+    assert(
+        math.abs(actual_time - expected_time) < 0.001,
+        `Tiny-interval tick {i} should be ~{expected_time}, got {actual_time}`
+    )
+end
 
 -- Test invalid handler type
 success, err = pcall(function()

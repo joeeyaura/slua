@@ -635,7 +635,8 @@ static int lltimers_tick_cont(lua_State *L, [[maybe_unused]]int status)
             else
             {
                 // Normal increment - maintain rhythm
-                lua_pushnumber(L, logical_schedule + interval);
+                // For interval=0, use next_scheduled since logical_schedule + 0 never changes
+                lua_pushnumber(L, interval == 0.0 ? next_scheduled : logical_schedule + interval);
             }
             lua_rawseti(L, CURRENT_TIMER, TIMER_LOGICAL_SCHEDULE);
         }
