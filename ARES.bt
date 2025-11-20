@@ -526,6 +526,7 @@ local uint64 refPositions[0xFFFF] = {0};
 typedef struct {
     char sig[4] <bgcolor=0x33aaff>;   /* Header signature for rudimentary validation */
     Assert(sig == "ARES");
+    uint32_t version;
     uint8_t sizeof_number;  /* sizeof(lua_Number) to check type compatibility */
     lua_Number test;    /* -1.234567890 to check representation compatibility */
     uint8_t sizeof_int; /* sizeof(int) in persisted data */
@@ -535,6 +536,9 @@ typedef struct {
      * fields in the following definitions. We write each value in the native
      * "size" and check for truncation when reading, if necessary. */
 } Header <bgcolor=cLtRed>;
+
+// Define this up here so structs can reference the version
+Header header;      /* The header used for basic validation. */
 
 string ReadObject(Object &o) {
     // ref should be non-zero if present
@@ -827,5 +831,4 @@ struct PermKey {
      * value in the permanents table when unpersisting has the correct type. */
 };
 
-Header header;      /* The header used for basic validation. */
 Object rootobj;     /* The root object that was persisted. */

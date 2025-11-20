@@ -255,6 +255,7 @@ typedef struct UnpersistInfo {
   size_t sizeof_int;
   size_t sizeof_size_t;
   size_t vector_components;
+  uint32_t version;
 } UnpersistInfo;
 
 /* Info shared in persist and unpersist. */
@@ -303,6 +304,11 @@ static char const kHeader[] = { 'A', 'R', 'E', 'S' };
 
 /* Floating point number used to check compatibility of loaded data. */
 static const lua_Number kHeaderNumber = (lua_Number)-1.234567890;
+
+/* Version number for the file format. */
+static const uint32_t kCurrentVersion = 1;
+/* Old format magic bytes (0x08, 0x1B, 0xDE, 0x83 in little-endian). */
+static const uint32_t kOldMagicBytes = 0x83DE1B08;
 
 /* Stack indices of some internal values/tables, to avoid magic numbers. */
 #define PERMIDX 1
@@ -2812,6 +2818,7 @@ unpersist(Info *info) {                                   /* perms reftbl ... */
 static void
 p_header(Info *info) {
   WRITE_RAW(kHeader, HEADER_LENGTH);
+  WRITE_VALUE(kCurrentVersion, uint32_t);
   WRITE_VALUE(sizeof(lua_Number), uint8_t);
   WRITE_VALUE(kHeaderNumber, lua_Number);
   WRITE_VALUE(sizeof(int), uint8_t);
@@ -2823,10 +2830,32 @@ static void
 u_header(Info *info) {
   char header[HEADER_LENGTH];
   uint8_t number_size;
+  uint32_t version_or_magic;
+
   READ_RAW(header, HEADER_LENGTH);
   if (strncmp(kHeader, header, HEADER_LENGTH) != 0) {
     eris_error(info, "invalid header signature");
   }
+
+  /* Read next 4 bytes - could be version (new format) or old magic bytes */
+  version_or_magic = READ_VALUE(uint32_t);
+
+  if (version_or_magic == kOldMagicBytes) {
+    /* Old format detected */
+    info->u.upi.version = 0;
+    /* Seek back 4 bytes so we can re-read the header fields */
+    info->u.upi.reader->seekg(-4, std::ios_base::cur);
+    if (info->u.upi.reader->fail()) {
+      eris_error(info, ERIS_ERR_READ);
+    }
+  } else {
+    /* New format - interpret as version number */
+    info->u.upi.version = version_or_magic;
+    if (info->u.upi.version > kCurrentVersion) {
+      eris_error(info, "unsupported file format version (too new)");
+    }
+  }
+
   number_size = READ_VALUE(uint8_t);
   if (number_size != sizeof(lua_Number)) {
     eris_error(info, "incompatible floating point type");
