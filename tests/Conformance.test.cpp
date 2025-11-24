@@ -3297,7 +3297,7 @@ TEST_CASE("KillError")
 
         interruptCount = 0;
         int status = lua_resume(T, nullptr, 0);
-        CHECK(status == LUA_ERRRUN);
+        CHECK(status == LUA_ERRKILL);
         CHECK(lua_isstring(T, -1));
         CHECK(std::string(lua_tostring(T, -1)).find("Script terminated") != std::string::npos);
 
@@ -3324,7 +3324,7 @@ TEST_CASE("KillError")
 
         interruptCount = 0;
         int status = lua_resume(T, nullptr, 0);
-        CHECK(status == LUA_ERRRUN);
+        CHECK(status == LUA_ERRKILL);
         CHECK(lua_isstring(T, -1));
         CHECK(std::string(lua_tostring(T, -1)).find("Script terminated") != std::string::npos);
 
@@ -3354,6 +3354,87 @@ TEST_CASE("KillError")
         CHECK(status == LUA_OK);
         CHECK(lua_isstring(T, -1));
         CHECK(std::string(lua_tostring(T, -1)) == "timeout");
+
+        lua_pop(L, 1);
+    }
+
+    // lua_killerror propagates through coroutine.resume()
+    {
+        static int interruptCount;
+
+        lua_callbacks(L)->interrupt = [](lua_State* L, int gc)
+        {
+            if (gc >= 0)
+                return;
+            if (++interruptCount >= 10)
+            {
+                interruptCount = 0;
+                lua_killerror(L, "Script terminated in child");
+            }
+        };
+
+        lua_State* T = lua_newthread(L);
+        lua_getglobal(T, "testcoroutine");
+
+        interruptCount = 0;
+        int status = lua_resume(T, nullptr, 0);
+        CHECK(status == LUA_ERRKILL);
+        CHECK(lua_isstring(T, -1));
+        CHECK(std::string(lua_tostring(T, -1)).find("Script terminated in child") != std::string::npos);
+
+        lua_pop(L, 1);
+    }
+
+    // lua_killerror propagates through nested coroutines
+    {
+        static int interruptCount;
+
+        lua_callbacks(L)->interrupt = [](lua_State* L, int gc)
+        {
+            if (gc >= 0)
+                return;
+            if (++interruptCount >= 10)
+            {
+                interruptCount = 0;
+                lua_killerror(L, "Script terminated in nested child");
+            }
+        };
+
+        lua_State* T = lua_newthread(L);
+        lua_getglobal(T, "testnestedcoroutine");
+
+        interruptCount = 0;
+        int status = lua_resume(T, nullptr, 0);
+        CHECK(status == LUA_ERRKILL);
+        CHECK(lua_isstring(T, -1));
+        CHECK(std::string(lua_tostring(T, -1)).find("Script terminated in nested child") != std::string::npos);
+
+        lua_pop(L, 1);
+    }
+
+    // lua_killerror propagates through coroutine.wrap()
+    {
+        static int interruptCount;
+
+        lua_callbacks(L)->interrupt = [](lua_State* L, int gc)
+        {
+            if (gc >= 0)
+                return;
+            if (++interruptCount >= 10)
+            {
+                interruptCount = 0;
+                lua_killerror(L, "Script terminated in wrapped coroutine");
+            }
+        };
+
+        lua_State* T = lua_newthread(L);
+        lua_getglobal(T, "testwrap");
+
+        interruptCount = 0;
+        int status = lua_resume(T, nullptr, 0);
+        CHECK(status == LUA_ERRKILL);
+        CHECK(lua_isstring(T, -1));
+        CHECK(std::string(lua_tostring(T, -1)).find("Script terminated in wrapped coroutine") != std::string::npos);
 
         lua_pop(L, 1);
     }

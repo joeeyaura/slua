@@ -30,4 +30,30 @@ function testnested()
     error("should not reach here")
 end
 
+-- Test coroutine.resume() with infinite loop in child
+function testcoroutine()
+    local co = coroutine.create(infiniteloop)
+    local success, err = coroutine.resume(co)
+    -- Should never reach here - kill should propagate to parent
+    error("should not reach here")
+end
+
+-- Test nested coroutines with infinite loop
+function testnestedcoroutine()
+    local inner = coroutine.create(infiniteloop)
+    local outer = coroutine.create(function()
+        coroutine.resume(inner)
+        error("should not reach here")
+    end)
+    coroutine.resume(outer)
+    error("should not reach here")
+end
+
+-- Test coroutine.wrap() with infinite loop
+function testwrap()
+    local f = coroutine.wrap(infiniteloop)
+    f()
+    error("should not reach here")
+end
+
 return "OK"

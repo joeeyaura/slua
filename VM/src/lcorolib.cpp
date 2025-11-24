@@ -72,6 +72,13 @@ static int auxresume(lua_State* L, lua_State* co, int narg)
     {
         return CO_STATUS_BREAK;
     }
+    else if (status == LUA_ERRKILL)
+    {
+        // ServerLua: Propagate uncatchable termination errors to parent thread
+        lua_xmove(co, L, 1); // move error message
+        lua_killerror(L, lua_tostring(L, -1)); // kill parent thread
+        // Never returns
+    }
     else
     {
         lua_xmove(co, L, 1); // move error message
@@ -101,6 +108,15 @@ static int auxresumecont(lua_State* L, lua_State* co)
     else
     {
         lua_rawcheckstack(L, 2);
+
+        // ServerLua: Propagate uncatchable termination errors to parent thread
+        if (co->status == LUA_ERRKILL)
+        {
+            lua_xmove(co, L, 1); // move error message
+            lua_killerror(L, lua_tostring(L, -1)); // kill parent thread
+            // Never returns
+        }
+
         lua_xmove(co, L, 1); // move error message
         return CO_STATUS_ERROR;
     }

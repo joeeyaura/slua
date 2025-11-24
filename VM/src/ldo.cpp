@@ -670,8 +670,7 @@ static int resume_finish(lua_State* L, int status)
 
     if (status != LUA_OK)
     {
-        // ServerLua: Set ERRRUN on thread for ERRKILL (both are terminal errors)
-        L->status = cast_byte(status == LUA_ERRKILL ? LUA_ERRRUN : status);
+        L->status = cast_byte(status);
 
         // ServerLua: Close upvalues for uncatchable termination errors
         if (status == LUA_ERRKILL)
