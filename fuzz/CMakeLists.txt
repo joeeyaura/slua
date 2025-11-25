@@ -106,3 +106,12 @@ target_include_directories(Luau.Fuzz.ProtoTest PRIVATE ${LUAU_PB_DIR} ${protobuf
 target_sources(Luau.Fuzz.ProtoTest PRIVATE ${LUAU_PB_SOURCES} prototest.cpp protoprint.cpp)
 target_link_libraries(Luau.Fuzz.ProtoTest PRIVATE protobuf::libprotobuf protobuf-mutator-libfuzzer protobuf-mutator)
 set_target_properties(Luau.Fuzz.ProtoTest PROPERTIES CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF OUTPUT_NAME fuzz-prototest)
+
+# ServerLua: JSON decoder fuzzer
+add_executable(Luau.Fuzz.Json)
+target_compile_options(Luau.Fuzz.Json PRIVATE ${FUZZ_COMPILE_OPTIONS})
+target_link_options(Luau.Fuzz.Json PRIVATE ${FUZZ_LINK_OPTIONS})
+target_compile_features(Luau.Fuzz.Json PRIVATE cxx_std_17)
+target_sources(Luau.Fuzz.Json PRIVATE json.cpp)
+target_link_libraries(Luau.Fuzz.Json PRIVATE Luau.VM)
+set_target_properties(Luau.Fuzz.Json PROPERTIES CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF OUTPUT_NAME fuzz-json)

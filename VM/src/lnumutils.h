@@ -3,6 +3,7 @@
 #pragma once
 
 #include <math.h>
+#include <stddef.h>
 
 #define luai_numadd(a, b) ((a) + (b))
 #define luai_numsub(a, b) ((a) - (b))

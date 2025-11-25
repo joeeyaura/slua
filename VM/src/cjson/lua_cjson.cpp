@@ -239,6 +239,8 @@ struct json_config_t {
     int decode_max_depth = DEFAULT_DECODE_MAX_DEPTH;
     int decode_array_with_array_mt = DEFAULT_DECODE_ARRAY_WITH_ARRAY_MT;
     int encode_skip_unsupported_value_types = DEFAULT_ENCODE_SKIP_UNSUPPORTED_VALUE_TYPES;
+    bool sl_tagged_types = false;  // When true, use !v, !q, !u, !i, !f tagging
+    bool sl_tight_encoding = false;  // When true, use compact format (no brackets, base64 UUIDs)
     strbuf_t encode_buf = {};
 
     json_config_t() {
@@ -840,6 +842,160 @@ static void json_append_number(lua_State *l, json_config_t *cfg,
     strbuf_extend_length(json, len);
 }
 
+static void json_append_coordinate_component(strbuf_t *json, float val, bool tight = false) {
+    if (tight && val == 0.0f)
+        return;  // Omit zeros in tight mode
+    char format_buf[64] = {};
+    // Use shared helper to ensure consistent normalization of non-finite values
+    size_t str_len = luai_formatfloat(format_buf, sizeof(format_buf), "%.6g", val);
+    strbuf_append_mem(json, format_buf, str_len);
+}
+
+// Helper to append a tagged vector value: !v<x,y,z> or tight: !v1,2,3
+static void json_append_tagged_vector(strbuf_t *json, const float *a, bool tight = false) {
+    strbuf_append_string(json, tight ? "\"!v" : "\"!v<");
+    json_append_coordinate_component(json, a[0], tight);
+    strbuf_append_char(json, ',');
+    json_append_coordinate_component(json, a[1], tight);
+    strbuf_append_char(json, ',');
+    json_append_coordinate_component(json, a[2], tight);
+    strbuf_append_string(json, tight ? "\"" : ">\"");
+}
+
+// Helper to append a tagged quaternion value: !q<x,y,z,w> or tight: !q,,,1
+static void json_append_tagged_quaternion(strbuf_t *json, const float *a, bool tight = false) {
+    strbuf_append_string(json, tight ? "\"!q" : "\"!q<");
+    json_append_coordinate_component(json, a[0], tight);
+    strbuf_append_char(json, ',');
+    json_append_coordinate_component(json, a[1], tight);
+    strbuf_append_char(json, ',');
+    json_append_coordinate_component(json, a[2], tight);
+    strbuf_append_char(json, ',');
+    json_append_coordinate_component(json, a[3], tight);
+    strbuf_append_string(json, tight ? "\"" : ">\"");
+}
+
+// Helper to parse a hex character to its value (returns -1 on error)
+static inline int hex_char_to_int(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+    if (c >= 'A' && c <= 'F') return 10 + c - 'A';
+    return -1;
+}
+
+// Helper to parse UUID string (36 chars) to bytes (16 bytes)
+// This is more strict than the typical UUID handling in SLua
+// because we don't need to handle "old" format UUIDs.
+static bool parse_uuid_to_bytes(const char *str, size_t len, uint8_t *out) {
+    if (len != 36) return false;
+    int out_idx = 0;
+    for (size_t i = 0; i < len && out_idx < 16; i++) {
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+            if (str[i] != '-') return false;
+            continue;
+        }
+        int hi = hex_char_to_int(str[i]);
+        int lo = hex_char_to_int(str[i + 1]);
+        if (hi < 0 || lo < 0) return false;
+        out[out_idx++] = (uint8_t)((hi << 4) | lo);
+        i++;
+    }
+    return out_idx == 16;
+}
+
+// Helper to append a tagged UUID value: !uxxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx or tight: !u<base64>
+static void json_append_tagged_uuid(lua_State *l, strbuf_t *json, int lindex, bool tight = false) {
+    lua_LSLUUID* uuid = (lua_LSLUUID*)lua_touserdatatagged(l, lindex, UTAG_UUID);
+    uint8_t uuid_bytes[16];
+
+    if (uuid->compressed) {
+        // Already raw bytes
+        memcpy(uuid_bytes, getstr(uuid->str), 16);
+    } else {
+        // Parse string form to bytes - error if invalid
+        const char *str = getstr(uuid->str);
+        size_t len = uuid->str->len;
+        if (!parse_uuid_to_bytes(str, len, uuid_bytes)) {
+            luaL_error(l, "invalid UUID format for JSON encoding");
+        }
+    }
+
+    if (tight) {
+        // Check for null UUID (all zeros)
+        bool is_null = true;
+        for (int i = 0; i < 16; i++) {
+            if (uuid_bytes[i] != 0) {
+                is_null = false;
+                break;
+            }
+        }
+        if (is_null) {
+            strbuf_append_string(json, "\"!u\"");
+        } else {
+            // Base64 encode - 16 bytes -> 24 chars, but we strip the '==' padding
+            char encoded[25];
+            apr_base64_encode_binary(encoded, uuid_bytes, 16);
+            strbuf_append_string(json, "\"!u");
+            strbuf_append_mem(json, encoded, 22);  // Strip '==' padding
+            strbuf_append_char(json, '"');
+        }
+    } else {
+        // Normal string form - output canonical UUID format
+        int top = lua_gettop(l);
+        size_t len;
+        const char *str = luaL_tolstring(l, lindex, &len);
+        strbuf_append_string(json, "\"!u");
+        strbuf_append_mem(json, str, len);
+        strbuf_append_char(json, '"');
+        lua_settop(l, top);
+    }
+}
+
+// Helper to append a tagged float: !f3.14 (used for all numeric keys in SL mode)
+static void json_append_tagged_float(strbuf_t *json, double num, int precision) {
+    strbuf_append_string(json, "\"!f");
+
+    if (isnan(num)) {
+        strbuf_append_mem(json, "NaN", 3);
+    } else if (isinf(num)) {
+        // Use 1e9999 which overflows to infinity when parsed back
+        if (signbit(num))
+            strbuf_append_string(json, "-1e9999");
+        else
+            strbuf_append_string(json, "1e9999");
+    } else {
+        strbuf_ensure_empty_length(json, FPCONV_G_FMT_BUFSIZE);
+        int len = fpconv_g_fmt(strbuf_empty_ptr(json), num, precision);
+        strbuf_extend_length(json, len);
+    }
+
+    strbuf_append_char(json, '"');
+}
+
+// Helper to append a string that may need ! escaping for SL tagged mode
+static void json_append_string_sl(lua_State *l, strbuf_t *json, int lindex) {
+    size_t len;
+    const char *str = lua_tolstring(l, lindex, &len);
+
+    // Check if string starts with '!' - needs escaping
+    bool needs_escape = (len > 0 && str[0] == '!');
+
+    strbuf_ensure_empty_length(json, len * 6 + 4); // Extra space for potential !! prefix
+    strbuf_append_char_unsafe(json, '"');
+
+    if (needs_escape)
+        strbuf_append_char_unsafe(json, '!');
+
+    for (size_t i = 0; i < len; i++) {
+        const char *escstr = char2escape[(unsigned char)str[i]];
+        if (escstr)
+            strbuf_append_string(json, escstr);
+        else
+            strbuf_append_char_unsafe(json, str[i]);
+    }
+    strbuf_append_char_unsafe(json, '"');
+}
+
 static void json_append_object(lua_State *l, json_config_t *cfg,
                                int current_depth, strbuf_t *json)
 {
@@ -858,17 +1014,57 @@ static void json_append_object(lua_State *l, json_config_t *cfg,
 
         /* table, key, value */
         keytype = lua_type(l, -2);
-        if (keytype == LUA_TNUMBER) {
-            strbuf_append_char(json, '"');
-            json_append_number(l, cfg, json, -2);
-            strbuf_append_mem(json, "\":", 2);
-        } else if (keytype == LUA_TSTRING) {
-            json_append_string(l, json, -2);
+
+        if (cfg->sl_tagged_types) {
+            // SL tagged mode: accept any key type and tag appropriately
+            switch (keytype) {
+            case LUA_TSTRING:
+                json_append_string_sl(l, json, -2);
+                break;
+            case LUA_TNUMBER:
+                json_append_tagged_float(json, lua_tonumber(l, -2), cfg->encode_number_precision);
+                break;
+            case LUA_TVECTOR: {
+                const float *a = lua_tovector(l, -2);
+                json_append_tagged_vector(json, a, cfg->sl_tight_encoding);
+                break;
+            }
+            case LUA_TUSERDATA: {
+                int tag = lua_userdatatag(l, -2);
+                if (tag == UTAG_UUID) {
+                    json_append_tagged_uuid(l, json, -2, cfg->sl_tight_encoding);
+                } else if (tag == UTAG_QUATERNION) {
+                    const float *a = luaSL_checkquaternion(l, -2);
+                    json_append_tagged_quaternion(json, a, cfg->sl_tight_encoding);
+                } else {
+                    json_encode_exception(l, cfg, json, -2,
+                                          "unsupported userdata type as table key");
+                }
+                break;
+            }
+            case LUA_TBOOLEAN:
+                strbuf_append_string(json, lua_toboolean(l, -2) ? "\"!b1\"" : "\"!b0\"");
+                break;
+            default:
+                json_encode_exception(l, cfg, json, -2,
+                                      "unsupported table key type");
+                /* never returns */
+            }
             strbuf_append_char(json, ':');
         } else {
-            json_encode_exception(l, cfg, json, -2,
-                                  "table key must be a number or string");
-            /* never returns */
+            // Standard JSON mode: only string and number keys
+            if (keytype == LUA_TNUMBER) {
+                strbuf_append_char(json, '"');
+                json_append_number(l, cfg, json, -2);
+                strbuf_append_mem(json, "\":", 2);
+            } else if (keytype == LUA_TSTRING) {
+                json_append_string(l, json, -2);
+                strbuf_append_char(json, ':');
+            } else {
+                json_encode_exception(l, cfg, json, -2,
+                                      "table key must be a number or string");
+                /* never returns */
+            }
         }
 
         /* table, key, value */
@@ -887,13 +1083,6 @@ static void json_append_object(lua_State *l, json_config_t *cfg,
     strbuf_append_char(json, '}');
 }
 
-static void json_append_coordinate_component(strbuf_t *json, float val) {
-    char format_buf[64] = {};
-    // Use shared helper to ensure consistent normalization of non-finite values
-    size_t str_len = luai_formatfloat(format_buf, sizeof(format_buf), "%.6g", val);
-    strbuf_append_mem(json, format_buf, str_len);
-}
-
 /* Serialise Lua data into JSON string. Return 1 if error an error happened, else 0 */
 static int json_append_data(lua_State *l, json_config_t *cfg,
                              int current_depth, strbuf_t *json)
@@ -905,7 +1094,10 @@ static int json_append_data(lua_State *l, json_config_t *cfg,
 
     switch (lua_type(l, -1)) {
     case LUA_TSTRING:
-        json_append_string(l, json, -1);
+        if (cfg->sl_tagged_types)
+            json_append_string_sl(l, json, -1);
+        else
+            json_append_string(l, json, -1);
         break;
     case LUA_TNUMBER:
         json_append_number(l, cfg, json, -1);
@@ -1012,14 +1204,18 @@ static int json_append_data(lua_State *l, json_config_t *cfg,
     }
     case LUA_TVECTOR: {
         const float *a = lua_tovector(l, -1);
-        // We specifically want a short representation here, don't use %f!
-        strbuf_append_string(json, "\"<");
-        json_append_coordinate_component(json, a[0]);
-        strbuf_append_char(json, ',');
-        json_append_coordinate_component(json, a[1]);
-        strbuf_append_char(json, ',');
-        json_append_coordinate_component(json, a[2]);
-        strbuf_append_string(json, ">\"");
+        if (cfg->sl_tagged_types) {
+            json_append_tagged_vector(json, a, cfg->sl_tight_encoding);
+        } else {
+            // We specifically want a short representation here, don't use %f!
+            strbuf_append_string(json, "\"<");
+            json_append_coordinate_component(json, a[0]);
+            strbuf_append_char(json, ',');
+            json_append_coordinate_component(json, a[1]);
+            strbuf_append_char(json, ',');
+            json_append_coordinate_component(json, a[2]);
+            strbuf_append_string(json, ">\"");
+        }
         break;
     }
     case LUA_TBUFFER: {
@@ -1042,19 +1238,26 @@ static int json_append_data(lua_State *l, json_config_t *cfg,
     case LUA_TUSERDATA: {
         int tag = lua_userdatatag(l, -1);
         if (tag == UTAG_UUID) {
-            json_append_tostring(l, json, -1);
+            if (cfg->sl_tagged_types)
+                json_append_tagged_uuid(l, json, -1, cfg->sl_tight_encoding);
+            else
+                json_append_tostring(l, json, -1);
             break;
         } else if (tag == UTAG_QUATERNION) {
             const float *a = luaSL_checkquaternion(l, -1);
-            strbuf_append_string(json, "\"<");
-            json_append_coordinate_component(json, a[0]);
-            strbuf_append_char(json, ',');
-            json_append_coordinate_component(json, a[1]);
-            strbuf_append_char(json, ',');
-            json_append_coordinate_component(json, a[2]);
-            strbuf_append_char(json, ',');
-            json_append_coordinate_component(json, a[3]);
-            strbuf_append_string(json, ">\"");
+            if (cfg->sl_tagged_types) {
+                json_append_tagged_quaternion(json, a, cfg->sl_tight_encoding);
+            } else {
+                strbuf_append_string(json, "\"<");
+                json_append_coordinate_component(json, a[0]);
+                strbuf_append_char(json, ',');
+                json_append_coordinate_component(json, a[1]);
+                strbuf_append_char(json, ',');
+                json_append_coordinate_component(json, a[2]);
+                strbuf_append_char(json, ',');
+                json_append_coordinate_component(json, a[3]);
+                strbuf_append_string(json, ">\"");
+            }
             break;
         }
         LUAU_FALLTHROUGH;
@@ -1106,6 +1309,32 @@ static int json_encode(lua_State *l)
     return 1;
 }
 
+static int json_encode_sl(lua_State *l)
+{
+    luau_interruptoncalltail(l);
+    json_config_t cfg;
+    cfg.sl_tagged_types = true;
+    cfg.encode_sparse_convert = 1;  // Convert sparse arrays to objects
+
+    luaL_checkany(l, 1);
+    cfg.sl_tight_encoding = luaL_optboolean(l, 2, false);
+    lua_settop(l, 1);  // Keep only the value to encode
+
+    char *json;
+    size_t len;
+
+    try {
+        json_append_data(l, &cfg, 0, &cfg.encode_buf);
+    } catch(strbuf_exception &e) {
+        luaL_error(l, "Overran encode size limits");
+    }
+    json = strbuf_string(&cfg.encode_buf, &len);
+
+    lua_pushlstring(l, json, len);
+
+    return 1;
+}
+
 /* ===== DECODING ===== */
 
 static void json_process_value(lua_State *l, json_parse_t *json,
@@ -1143,6 +1372,173 @@ static int decode_hex4(const char *hex)
            (digit[1] << 8) +
            (digit[2] << 4) +
             digit[3];
+}
+
+// Helper to parse a tight component (empty string = 0.0f)
+static float parse_tight_component(const char **ptr, char delimiter) {
+    const char *p = *ptr;
+    if (*p == delimiter || *p == '\0') {
+        // Empty component = 0.0f
+        return 0.0f;
+    }
+    char *end;
+    float val = strtof(p, &end);
+    *ptr = end;
+    return val;
+}
+
+// Parse a tagged string and push the appropriate value onto the Lua stack.
+// Returns true if the string was tagged and a value was pushed, false if it's a plain string.
+// Throws Lua error on malformed tagged strings.
+static bool json_parse_tagged_string(lua_State *l, const char *str, size_t len)
+{
+    if (len < 2 || str[0] != '!')
+        return false;
+
+    char tag = str[1];
+    const char *payload = str + 2;
+    size_t payload_len = len - 2;
+
+    switch (tag) {
+    case '!':
+        // Escaped '!' - push string with leading '!' stripped
+        lua_pushlstring(l, str + 1, len - 1);
+        return true;
+
+    case 'v': {
+        // Vector: !v<x,y,z> (normal) or !v1,2,3 (tight)
+        float x, y, z;
+
+        if (payload_len > 0 && payload[0] == '<') {
+            // Normal format with brackets
+            if (payload_len < 5 || payload[payload_len - 1] != '>')
+                luaL_error(l, "malformed tagged vector: %s", str);
+
+            char *end;
+            x = strtof(payload + 1, &end);
+            if (*end != ',')
+                luaL_error(l, "malformed tagged vector: %s", str);
+            y = strtof(end + 1, &end);
+            if (*end != ',')
+                luaL_error(l, "malformed tagged vector: %s", str);
+            z = strtof(end + 1, &end);
+            if (*end != '>')
+                luaL_error(l, "malformed tagged vector: %s", str);
+        } else {
+            // Tight format: !v1,2,3 or !v,,1 (empty = 0)
+            const char *p = payload;
+            x = parse_tight_component(&p, ',');
+            if (*p != ',')
+                luaL_error(l, "malformed tagged vector: %s", str);
+            p++;
+            y = parse_tight_component(&p, ',');
+            if (*p != ',')
+                luaL_error(l, "malformed tagged vector: %s", str);
+            p++;
+            z = parse_tight_component(&p, '\0');
+        }
+
+        lua_pushvector(l, x, y, z);
+        return true;
+    }
+
+    case 'q': {
+        // Quaternion: !q<x,y,z,w> (normal) or !q,,,1 (tight)
+        float x, y, z, w;
+
+        if (payload_len > 0 && payload[0] == '<') {
+            // Normal format with brackets
+            if (payload_len < 7 || payload[payload_len - 1] != '>')
+                luaL_error(l, "malformed tagged quaternion: %s", str);
+
+            char *end;
+            x = strtof(payload + 1, &end);
+            if (*end != ',')
+                luaL_error(l, "malformed tagged quaternion: %s", str);
+            y = strtof(end + 1, &end);
+            if (*end != ',')
+                luaL_error(l, "malformed tagged quaternion: %s", str);
+            z = strtof(end + 1, &end);
+            if (*end != ',')
+                luaL_error(l, "malformed tagged quaternion: %s", str);
+            w = strtof(end + 1, &end);
+            if (*end != '>')
+                luaL_error(l, "malformed tagged quaternion: %s", str);
+        } else {
+            // Tight format: !q,,,1 (empty = 0)
+            const char *p = payload;
+            x = parse_tight_component(&p, ',');
+            if (*p != ',')
+                luaL_error(l, "malformed tagged quaternion: %s", str);
+            p++;
+            y = parse_tight_component(&p, ',');
+            if (*p != ',')
+                luaL_error(l, "malformed tagged quaternion: %s", str);
+            p++;
+            z = parse_tight_component(&p, ',');
+            if (*p != ',')
+                luaL_error(l, "malformed tagged quaternion: %s", str);
+            p++;
+            w = parse_tight_component(&p, '\0');
+        }
+
+        luaSL_pushquaternion(l, x, y, z, w);
+        return true;
+    }
+
+    case 'u':
+        // UUID: !u (null), !u<base64> (22 chars), or !uxxxxxxxx-xxxx-... (36 chars)
+        if (payload_len == 0) {
+            // Tight null UUID (all zeros)
+            static const uint8_t null_uuid[16] = {0};
+            luaSL_pushuuidbytes(l, null_uuid);
+        } else if (payload_len == 22) {
+            // Tight format: base64 encoded UUID
+            // Add padding back for decoding
+            char padded[25];
+            memcpy(padded, payload, 22);
+            padded[22] = '=';
+            padded[23] = '=';
+            padded[24] = '\0';
+
+            uint8_t uuid_bytes[16];
+            int decoded_len = apr_base64_decode_binary(uuid_bytes, padded);
+            if (decoded_len != 16)
+                luaL_error(l, "malformed base64 UUID: %s", str);
+
+            luaSL_pushuuidbytes(l, uuid_bytes);
+        } else {
+            // Normal format: UUID string
+            luaSL_pushuuidlstring(l, payload, payload_len);
+        }
+        return true;
+
+    case 'f': {
+        // Float: !f3.14 or !fNaN or !f1e9999 (infinity)
+        char *end;
+        double num = fpconv_strtod(payload, &end);
+        if (end == payload)
+            luaL_error(l, "malformed tagged float: %s", str);
+        lua_pushnumber(l, num);
+        return true;
+    }
+
+    case 'b':
+        // Boolean: !b1 or !b0
+        if (payload_len == 1 && payload[0] == '1') {
+            lua_pushboolean(l, 1);
+            return true;
+        } else if (payload_len == 1 && payload[0] == '0') {
+            lua_pushboolean(l, 0);
+            return true;
+        }
+        luaL_error(l, "malformed tagged boolean: %s", str);
+        return false;
+
+    default:
+        luaL_error(l, "unknown tag '!%c' in string: %s", tag, str);
+        return false; // unreachable
+    }
 }
 
 /* Converts a Unicode codepoint to UTF-8.
@@ -1215,11 +1611,14 @@ static int json_append_unicode_escape(json_parse_t *json)
         if (codepoint & 0x400)
             return -1;
 
-        /* Ensure the next code is a unicode escape */
-        if (*(json->ptr + escape_len) != '\\' ||
-            *(json->ptr + escape_len + 1) != 'u') {
+        /* Ensure the next code is a unicode escape.
+         * Check for null first to be defensive against truncated input. */
+        char next_char = *(json->ptr + escape_len);
+        if (next_char == '\0' || next_char != '\\')
             return -1;
-        }
+        next_char = *(json->ptr + escape_len + 1);
+        if (next_char == '\0' || next_char != 'u')
+            return -1;
 
         /* Fetch the next codepoint */
         surrogate_low = decode_hex4(json->ptr + 2 + escape_len);
@@ -1283,8 +1682,12 @@ static void json_next_string_token(json_parse_t *json, json_token_t *token)
 
         /* Handle escapes */
         if (ch == '\\') {
-            /* Fetch escape character */
+            /* Fetch escape character - check for truncated input */
             ch = *(json->ptr + 1);
+            if (!ch) {
+                json_set_token_error(token, json, "unexpected end of string after escape");
+                return;
+            }
 
             /* Translate escape code and append to tmp string */
             ch = escape2char[(unsigned char)ch];
@@ -1542,8 +1945,13 @@ static void json_parse_object_context(lua_State *l, json_parse_t *json)
         if (token.type != T_STRING)
             json_throw_parse_error(l, json, "object key string", &token);
 
-        /* Push key */
-        lua_pushlstring(l, token.value.string, token.string_len);
+        /* Push key - parse as tagged if sl_tagged_types is enabled */
+        if (json->cfg->sl_tagged_types &&
+            json_parse_tagged_string(l, token.value.string, token.string_len)) {
+            // Tagged key was pushed
+        } else {
+            lua_pushlstring(l, token.value.string, token.string_len);
+        }
 
         json_next_token(json, &token);
         if (token.type != T_COLON)
@@ -1621,7 +2029,12 @@ static void json_process_value(lua_State *l, json_parse_t *json,
 {
     switch (token->type) {
     case T_STRING:
-        lua_pushlstring(l, token->value.string, token->string_len);
+        if (json->cfg->sl_tagged_types &&
+            json_parse_tagged_string(l, token->value.string, token->string_len)) {
+            // Tagged value was pushed
+        } else {
+            lua_pushlstring(l, token->value.string, token->string_len);
+        }
         break;;
     case T_NUMBER:
         lua_pushnumber(l, token->value.number);
@@ -1677,6 +2090,45 @@ static int json_decode(lua_State *l)
     /* Ensure the temporary buffer can hold the entire string.
      * This means we no longer need to do length checks since the decoded
      * string must be smaller than the entire json string */
+    json.tmp = strbuf_new(json_len, DEFAULT_MAX_SIZE);
+
+    DEFER_STRBUF_DESTRUCTION(json.tmp);
+
+    json_next_token(&json, &token);
+    json_process_value(l, &json, &token);
+
+    /* Ensure there is no more input left */
+    json_next_token(&json, &token);
+
+    if (token.type != T_END)
+        json_throw_parse_error(l, &json, "the end", &token);
+
+    return 1;
+}
+
+static int json_decode_sl(lua_State *l)
+{
+    luau_interruptoncalltail(l);
+    json_config_t cfg;
+    cfg.sl_tagged_types = true;
+    json_parse_t json;
+    json_token_t token;
+    size_t json_len;
+
+    luaL_argcheck(l, lua_gettop(l) == 1, 1, "expected 1 argument");
+
+    json.cfg = &cfg;
+    json.data = luaL_checklstring(l, 1, &json_len);
+    json.current_depth = 0;
+    json.ptr = json.data;
+
+    /* Detect Unicode other than UTF-8 (see RFC 4627, Sec 3) */
+    if (json_len >= 2 && (!json.data[0] || !json.data[1]))
+        luaL_error(l, "JSON parser does not support UTF-16 or UTF-32");
+
+    if (json_len > DEFAULT_MAX_SIZE)
+        luaL_errorL(l, "JSON too large to decode");
+
     json.tmp = strbuf_new(json_len, DEFAULT_MAX_SIZE);
 
     DEFER_STRBUF_DESTRUCTION(json.tmp);
@@ -1755,6 +2207,8 @@ static int lua_cjson_new(lua_State *l)
     luaL_Reg reg[] = {
         { "encode", json_encode },
         { "decode", json_decode },
+        { "slencode", json_encode_sl },
+        { "sldecode", json_decode_sl },
         { NULL, NULL }
     };
 

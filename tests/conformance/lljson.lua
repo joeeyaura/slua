@@ -124,4 +124,197 @@ assert(lljson.encode(setmetatable(sampleObj, ReturnTableJsonMeta)), '["<1,2,3>",
 -- setmetatable mutates, so we don't need to call it again.
 assert(lljson.encode({sampleObj, sampleObj}), '[["<1,2,3>","baz"],["<1,2,3>","baz"]]')
 
+-- ============================================
+-- SL-specific tagged JSON (slencode/sldecode)
+-- ============================================
+
+-- Basic tagged encoding of values
+assert(lljson.slencode(vector(1, 2, 3)) == '"!v<1,2,3>"')
+assert(lljson.slencode(quaternion(1, 2, 3, 4)) == '"!q<1,2,3,4>"')
+assert(lljson.slencode(uuid("12345678-1234-1234-1234-123456789abc")) == '"!u12345678-1234-1234-1234-123456789abc"')
+
+-- Strings starting with ! get escaped
+assert(lljson.slencode("!dangerous") == '"!!dangerous"')
+assert(lljson.slencode("!") == '"!!"')
+-- Normal strings are unchanged
+assert(lljson.slencode("normal") == '"normal"')
+
+-- Tagged decoding of values
+assert(lljson.sldecode('"!v<1,2,3>"') == vector(1, 2, 3))
+assert(lljson.sldecode('"!q<1,2,3,4>"') == quaternion(1, 2, 3, 4))
+assert(lljson.sldecode('"!u12345678-1234-1234-1234-123456789abc"') == uuid("12345678-1234-1234-1234-123456789abc"))
+
+-- Escaped ! strings decode correctly
+assert(lljson.sldecode('"!!dangerous"') == "!dangerous")
+assert(lljson.sldecode('"!!"') == "!")
+
+-- Non-tagged strings still work
+assert(lljson.sldecode('"normal"') == "normal")
+
+-- Round-trip tests for values
+local test_vec = vector(1.5, -2.25, 3.14159)
+assert(lljson.sldecode(lljson.slencode(test_vec)) == test_vec)
+
+local test_quat = quaternion(0.1, 0.2, 0.3, 0.9)
+assert(lljson.sldecode(lljson.slencode(test_quat)) == test_quat)
+
+local test_uuid = uuid("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+assert(lljson.sldecode(lljson.slencode(test_uuid)) == test_uuid)
+
+-- Tagged keys: numeric keys become !f
+local float_key_table = {[3.14] = "pi"}
+local float_key_json = lljson.slencode(float_key_table)
+assert(float_key_json == '{"!f3.14":"pi"}')
+local float_key_decoded = lljson.sldecode(float_key_json)
+assert(float_key_decoded[3.14] == "pi")
+
+-- Tagged keys: vector keys
+local vec_key_table = {[vector(1, 2, 3)] = "vec"}
+local vec_key_json = lljson.slencode(vec_key_table)
+assert(vec_key_json == '{"!v<1,2,3>":"vec"}')
+local vec_key_decoded = lljson.sldecode(vec_key_json)
+assert(vec_key_decoded[vector(1, 2, 3)] == "vec")
+
+-- Tagged keys: quaternion keys (note: table lookup uses reference identity, but == uses value equality)
+local quat_key_table = {[quaternion(0, 0, 0, 1)] = "identity"}
+local quat_key_json = lljson.slencode(quat_key_table)
+assert(quat_key_json == '{"!q<0,0,0,1>":"identity"}')
+local quat_key_decoded = lljson.sldecode(quat_key_json)
+-- Can't lookup by value since table keys use reference identity, need to iterate
+local found_quat_key = false
+for k, v in quat_key_decoded do
+    if k == quaternion(0, 0, 0, 1) and v == "identity" then
+        found_quat_key = true
+    end
+end
+assert(found_quat_key)
+
+-- Tagged keys: UUID keys
+local uuid_key_table = {[uuid("12345678-1234-1234-1234-123456789abc")] = "some_uuid"}
+local uuid_key_json = lljson.slencode(uuid_key_table)
+assert(uuid_key_json == '{"!u12345678-1234-1234-1234-123456789abc":"some_uuid"}')
+local uuid_key_decoded = lljson.sldecode(uuid_key_json)
+assert(uuid_key_decoded[uuid("12345678-1234-1234-1234-123456789abc")] == "some_uuid")
+
+-- Tagged keys: string keys starting with ! get escaped
+local bang_key_table = {["!bang"] = "value"}
+local bang_key_json = lljson.slencode(bang_key_table)
+assert(bang_key_json == '{"!!bang":"value"}')
+local bang_key_decoded = lljson.sldecode(bang_key_json)
+assert(bang_key_decoded["!bang"] == "value")
+
+-- Infinity in tagged floats
+local inf_key_table = {[math.huge] = "infinity"}
+local inf_key_json = lljson.slencode(inf_key_table)
+assert(inf_key_json == '{"!f1e9999":"infinity"}')
+local inf_key_decoded = lljson.sldecode(inf_key_json)
+assert(inf_key_decoded[math.huge] == "infinity")
+
+-- NaN can't be used as a table key in Lua ("table index is NaN" error)
+-- so we can't test NaN keys - but NaN values in vectors still work:
+
+-- Vectors with special float values
+local special_vec = vector(math.huge, -math.huge, 0/0)
+local special_vec_json = lljson.slencode(special_vec)
+assert(special_vec_json == '"!v<inf,-inf,nan>"')
+local special_vec_decoded = lljson.sldecode(special_vec_json)
+assert(special_vec_decoded.x == math.huge)
+assert(special_vec_decoded.y == -math.huge)
+assert(special_vec_decoded.z ~= special_vec_decoded.z) -- NaN check
+
+-- Error on malformed tags
+assert(not pcall(function() lljson.sldecode('"!x<invalid>"') end))
+assert(not pcall(function() lljson.sldecode('"!v<1,2>"') end)) -- missing component
+assert(not pcall(function() lljson.sldecode('"!q<1,2,3>"') end)) -- missing component
+
+-- Complex nested structure round-trip
+local complex = {
+    vec = vector(1, 2, 3),
+    quat = quaternion(0, 0, 0, 1),
+    id = uuid("00000000-0000-0000-0000-000000000001"),
+    str = "hello",
+    bang_str = "!escaped",
+    nested = {
+        inner_vec = vector(4, 5, 6),
+    },
+}
+local complex_json = lljson.slencode(complex)
+local complex_decoded = lljson.sldecode(complex_json)
+assert(complex_decoded.vec == complex.vec)
+assert(complex_decoded.quat == complex.quat)
+assert(complex_decoded.id == complex.id)
+assert(complex_decoded.str == complex.str)
+assert(complex_decoded.bang_str == complex.bang_str)
+assert(complex_decoded.nested.inner_vec == complex.nested.inner_vec)
+
+-- ============================================
+-- Tight encoding mode (second arg = true)
+-- ============================================
+
+-- Tight vectors: no angle brackets
+assert(lljson.slencode(vector(1, 2, 3), true) == '"!v1,2,3"')
+
+-- Tight vectors: zeros omitted
+assert(lljson.slencode(vector(0, 0, 1), true) == '"!v,,1"')
+assert(lljson.slencode(vector(0, 0, 0), true) == '"!v,,"')
+assert(lljson.slencode(vector(1, 0, 0), true) == '"!v1,,"')
+assert(lljson.slencode(vector(0, 2, 0), true) == '"!v,2,"')
+
+-- Tight quaternions: no angle brackets, zeros omitted
+assert(lljson.slencode(quaternion(0, 0, 0, 1), true) == '"!q,,,1"')
+assert(lljson.slencode(quaternion(1, 0, 0, 0), true) == '"!q1,,,"')
+assert(lljson.slencode(quaternion(0, 0, 0, 0), true) == '"!q,,,"')
+
+-- Tight UUIDs: base64 encoded (22 chars instead of 36)
+local test_uuid = uuid("12345678-1234-1234-1234-123456789abc")
+local tight_uuid_json = lljson.slencode(test_uuid, true)
+-- Should be "!u" + 22 chars of base64
+assert(#tight_uuid_json == 26)  -- 2 quotes + !u + 22 base64
+assert(tight_uuid_json:sub(1, 3) == '"!u')
+
+-- Tight null UUID: just "!u" with no payload
+local null_uuid = uuid("00000000-0000-0000-0000-000000000000")
+assert(lljson.slencode(null_uuid, true) == '"!u"')
+assert(lljson.sldecode('"!u"') == null_uuid)
+
+-- Decoding tight formats
+assert(lljson.sldecode('"!v1,2,3"') == vector(1, 2, 3))
+assert(lljson.sldecode('"!v,,1"') == vector(0, 0, 1))
+assert(lljson.sldecode('"!v,,"') == vector(0, 0, 0))
+assert(lljson.sldecode('"!q,,,1"') == quaternion(0, 0, 0, 1))
+assert(lljson.sldecode('"!q,,,"') == quaternion(0, 0, 0, 0))
+
+-- Normal format still works after tight implementation
+assert(lljson.sldecode('"!v<1,2,3>"') == vector(1, 2, 3))
+assert(lljson.sldecode('"!q<0,0,0,1>"') == quaternion(0, 0, 0, 1))
+
+-- Round-trip with tight encoding
+local vec_rt = lljson.sldecode(lljson.slencode(vector(1.5, 0, -2.5), true))
+assert(vec_rt == vector(1.5, 0, -2.5))
+
+local quat_rt = lljson.sldecode(lljson.slencode(quaternion(0, 0, 0, 1), true))
+assert(quat_rt == quaternion(0, 0, 0, 1))
+
+local uuid_rt = lljson.sldecode(lljson.slencode(test_uuid, true))
+assert(uuid_rt == test_uuid)
+
+-- Complex structure with tight encoding
+local tight_complex = {
+    pos = vector(0, 0, 10),
+    rot = quaternion(0, 0, 0, 1),
+    id = uuid("00000000-0000-0000-0000-000000000001"),
+}
+local tight_json = lljson.slencode(tight_complex, true)
+local tight_decoded = lljson.sldecode(tight_json)
+assert(tight_decoded.pos == tight_complex.pos)
+assert(tight_decoded.rot == tight_complex.rot)
+assert(tight_decoded.id == tight_complex.id)
+
+-- Boolean keys
+local bool_key_table = {[true] = "yes", [false] = "no"}
+local bool_key_json = lljson.slencode(bool_key_table)
+local bool_key_decoded = lljson.sldecode(bool_key_json)
+assert(bool_key_decoded[true] == "yes")
+assert(bool_key_decoded[false] == "no")
+
 return 'OK'
