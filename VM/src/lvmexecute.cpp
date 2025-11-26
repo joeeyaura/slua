@@ -3041,12 +3041,16 @@ reentry:
                 TValue* kv = VM_KV(LUAU_INSN_B(insn));
                 StkId rc = VM_REG(LUAU_INSN_C(insn));
 
-                // NOTE: ServerLua can't use these for integer-aware paths!
-
                 // fast-path
                 if (ttisnumber(rc))
                 {
                     setnvalue(ra, nvalue(kv) - nvalue(rc));
+                    VM_NEXT();
+                }
+                else if (l_isinteger(kv) && l_isinteger(rc))
+                {
+                    // ServerLua: integer math
+                    setintvalue(ra, intvalue(kv) - intvalue(rc));
                     VM_NEXT();
                 }
                 else

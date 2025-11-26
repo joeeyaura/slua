@@ -1031,6 +1031,11 @@ TEST_CASE("Extensive LSL Ares Test")
     runAresYieldTest("conformance2_yield.lsl");
 }
 
+TEST_CASE("RK optimization issues")
+{
+    runConformance("rk_issues.lsl");
+}
+
 
 static std::string mono_to_lower_string(const std::string &str)
 {

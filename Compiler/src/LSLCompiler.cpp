@@ -1459,21 +1459,31 @@ bool LuauVisitor::visit(LSLBinaryExpression* bin_expr)
         }
 
         // Check if we can use RK-variant opcodes for SUB/DIV
-        // Only check this for operations that actually have reversed K-variants
-        if ((op == '-' || op == '/') &&
-            lhs->getNodeSubType() == NODE_CONSTANT_EXPRESSION &&
-            (lhs->getIType() == LST_INTEGER || lhs->getIType() == LST_FLOATINGPOINT))
+        // SUBRK supports both integers and floats, DIVRK only supports floats
+        if (lhs->getNodeSubType() == NODE_CONSTANT_EXPRESSION)
         {
-            auto* lhs_const = dynamic_cast<LSLConstantExpression*>(lhs);
-            auto lhs_const_idx = addConstant(lhs_const->getConstantValue());
-
-            // Constant index is low enough to fit
-            if (lhs_const_idx >= 0 && lhs_const_idx <= 255)
+            LuauOpcode rk_op = LOP_NOP;
+            if (op == '-' && (lhs->getIType() == LST_INTEGER || lhs->getIType() == LST_FLOATINGPOINT))
             {
-                LuauOpcode rk_op = (op == '-') ? LOP_SUBRK : LOP_DIVRK;
-                mBuilder->emitABC(rk_op, target_reg, (uint8_t)lhs_const_idx, rhs_reg);
-                // maybeMove(expected_target, target_reg);
-                return false;
+                rk_op = LOP_SUBRK;
+            }
+            else if (op == '/' && lhs->getIType() == LST_FLOATINGPOINT)
+            {
+                // DIVRK only works with floats - no IDIVRK exists
+                rk_op = LOP_DIVRK;
+            }
+
+            if (rk_op != LOP_NOP)
+            {
+                auto* lhs_const = dynamic_cast<LSLConstantExpression*>(lhs);
+                auto lhs_const_idx = addConstant(lhs_const->getConstantValue());
+
+                // Constant index is low enough to fit
+                if (lhs_const_idx >= 0 && lhs_const_idx <= 255)
+                {
+                    mBuilder->emitABC(rk_op, target_reg, (uint8_t)lhs_const_idx, rhs_reg);
+                    return false;
+                }
             }
         }
 
