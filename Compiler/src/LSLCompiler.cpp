@@ -2105,7 +2105,11 @@ void LuauVisitor::patchJumpOrThrow(size_t jumpLabel, size_t targetLabel)
 
 void compileLSLOrThrow(Luau::BytecodeBuilder &bcb, const std::string &source)
 {
-    tailslide_init_builtins(nullptr);
+    thread_local bool builtins_initialized = false;
+    if (!builtins_initialized) {
+        tailslide_init_builtins(nullptr);
+        builtins_initialized = true;
+    }
     ScopedScriptParser parser(nullptr);
     Logger *logger = &parser.logger;
 

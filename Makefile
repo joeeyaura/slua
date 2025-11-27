@@ -174,13 +174,14 @@ $(REPL_CLI_OBJECTS): CXXFLAGS+=-std=c++17 -ICommon/include -IAst/include -ICompi
 $(ANALYZE_CLI_OBJECTS): CXXFLAGS+=-std=c++17 -ICommon/include -IAst/include -IAnalysis/include -IEqSat/include -IConfig/include -IRequire/include -IVM/include -Iextern -ICLI/include
 $(COMPILE_CLI_OBJECTS): CXXFLAGS+=-std=c++17 -ICommon/include -IAst/include -ICompiler/include -IVM/include -ICodeGen/include -ICLI/include -Istage/packages/include
 $(BYTECODE_CLI_OBJECTS): CXXFLAGS+=-std=c++17 -ICommon/include -IAst/include -ICompiler/include -IVM/include -ICodeGen/include -ICLI/include
-$(FUZZ_OBJECTS): CXXFLAGS+=-std=c++17 -ICommon/include -IAst/include -ICompiler/include -IAnalysis/include -IEqSat/include -IVM/include -ICodeGen/include -IConfig/include
+$(FUZZ_OBJECTS): CXXFLAGS+=-std=c++17 -ICommon/include -IAst/include -ICompiler/include -IAnalysis/include -IEqSat/include -IVM/include -ICodeGen/include -IConfig/include -Istage/packages/include
 
 $(TESTS_TARGET): LDFLAGS+=-lpthread -Lstage/packages/lib/release -ltailslide
 $(REPL_CLI_TARGET): LDFLAGS+=-lpthread -Lstage/packages/lib/release -ltailslide
 $(ANALYZE_CLI_TARGET): LDFLAGS+=-lpthread
 $(COMPILE_CLI_TARGET): LDFLAGS+=-Lstage/packages/lib/release -ltailslide
 fuzz-proto fuzz-prototest: LDFLAGS+=build/libprotobuf-mutator/src/libfuzzer/libprotobuf-mutator-libfuzzer.a build/libprotobuf-mutator/src/libprotobuf-mutator.a $(LPROTOBUF)
+fuzz-lsl_script: LDFLAGS+=-Lstage/packages/lib/release -ltailslide
 
 # pseudo targets
 .PHONY: all test clean coverage format luau-size aliases
