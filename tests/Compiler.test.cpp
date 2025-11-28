@@ -1,5 +1,6 @@
 // This file is part of the Luau programming language and is licensed under MIT License; see LICENSE.txt for details
 #include "Luau/Compiler.h"
+#include "luau/Compiler.h"
 #include "Luau/BytecodeBuilder.h"
 #include "Luau/StringUtils.h"
 
@@ -9502,6 +9503,22 @@ LOADK R0 K0 ['hello world']
 RETURN R0 1
 )"
     );
+}
+
+TEST_CASE("CompilerDll")
+{
+    const char* source = "return 5, 6.5";
+    LuauCompileResult result = Compile(source);
+    CHECK(result.data);
+    CHECK(result.size > 0);
+    CHECK(result.errors == nullptr);
+    Free(result);
+
+    LuauCompileResult astResult = Ast(source);
+    CHECK(astResult.data);
+    CHECK(astResult.size > 0);
+    CHECK(astResult.errors == nullptr);
+    Free(astResult);
 }
 
 TEST_SUITE_END();
