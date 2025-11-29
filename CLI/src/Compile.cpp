@@ -1,7 +1,7 @@
 // This file is part of the Luau programming language and is licensed under MIT License; see LICENSE.txt for details
 #include "lua.h"
 #include "lualib.h"
-
+#include "luau/Compiler.h"
 #include "Luau/CodeGen.h"
 #include "Luau/Compiler.h"
 #ifdef LUAU_USE_TAILSLIDE
@@ -481,7 +481,7 @@ std::string escapeFilename(const std::string& filename)
     return escaped;
 }
 
-int main(int argc, char** argv)
+LUAU_CLI_API int luau_compile_cli(int argc, char** argv)
 {
     Luau::assertHandler() = assertionHandler;
 
