@@ -1,6 +1,6 @@
 // This file is part of the Luau programming language and is licensed under MIT License; see LICENSE.txt for details
 #include <optional>
-
+#include "luau/Compiler.h"
 #include "Luau/Common.h"
 #include "Luau/Ast.h"
 #include "Luau/AstJsonEncoder.h"
@@ -21,7 +21,7 @@ static int assertionHandler(const char* expr, const char* file, int line, const 
     return 1;
 }
 
-int main(int argc, char** argv)
+LUAU_CLI_API int luau_ast_cli(int argc, char** argv)
 {
     Luau::assertHandler() = assertionHandler;
 

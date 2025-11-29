@@ -6,6 +6,8 @@ endif()
 
 cmake_minimum_required(VERSION 3.10)
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 option(LUAU_BUILD_CLI "Build CLI" ON)
 option(LUAU_BUILD_TESTS "Build tests" ON)
 option(LUAU_BUILD_WEB "Build Web module" OFF)
@@ -49,9 +51,9 @@ add_library(isocline STATIC)
 if(LUAU_BUILD_CLI)
     add_executable(Luau.Repl.CLI)
     add_executable(Luau.Analyze.CLI)
-    add_executable(Luau.Ast.CLI)
+    add_library(Luau.Ast.CLI SHARED)
     add_executable(Luau.Reduce.CLI)
-    add_executable(Luau.Compile.CLI)
+    add_library(Luau.Compile.CLI SHARED)
     add_executable(Luau.Bytecode.CLI)
 
     # This also adds target `name` on Linux/macOS and `name.exe` on Windows
