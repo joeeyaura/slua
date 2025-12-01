@@ -42,6 +42,7 @@ pushd "$top"
     pushd "Compiler/include"
     cp -v luacode.h "$stage/include/luau/"
     popd
+    cp -rv "Common/include/Luau" "$stage/include/luau/"
 
     # Don't litter the source directory with build artifacts
     mkdir -p "$stage/build"
