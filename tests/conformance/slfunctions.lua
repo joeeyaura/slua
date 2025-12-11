@@ -67,5 +67,7 @@ assert(not pcall(function() integer() end))
 
 -- Vector / quaternion operations should still be supported as in LSL
 assert(vec * quaternion(0, 0, 0, 1) == vec)
+-- Make sure our ll.StringLength is unicode-aware
+assert(ll.StringLength("草") == 1)
 
 return "OK"

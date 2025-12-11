@@ -891,7 +891,12 @@ static const luaL_Reg llcompateligiblelib[] = {
 // but are not to be used in user-provided scripts
 static int ll_stringlength(lua_State *L)
 {
-    luaSL_pushnativeinteger(L, (int)strlen(luaL_checkstring(L, 1)));
+    const char *str_val = luaL_checkstring(L, 1);
+    // Need to truncate at first null like LSL
+    size_t str_len = strlen(str_val);
+    // LSL string length is really the number of codepoints.
+    // Not an ideal way of doing it, but whatever, this is just for the repl.
+    luaSL_pushnativeinteger(L, (int)utf8str_to_codepoints(str_val, str_len).length());
     return 1;
 }
 
@@ -901,7 +906,9 @@ static int ll_getsubstring(lua_State* L)
     // or 0-based indexing (LSL compat mode). Supports negative indices and wraparound.
     // For demo/test purposes only, as it doesn't truncate at null like the real one.
     size_t str_len;
-    const char *str_val = luaL_checklstring(L, 1, &str_len);
+    const char *str_val = luaL_checkstring(L, 1);
+    // Need to truncate at first null like LSL does
+    str_len = strlen(str_val);
     bool compat_mode = lua_toboolean(L, lua_upvalueindex(1));
 
     // Convert UTF-8 string to codepoints
