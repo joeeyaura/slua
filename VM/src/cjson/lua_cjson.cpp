@@ -43,6 +43,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <lua.h>
+#include <luaconf.h>
 #include <lualib.h>
 #include <vector>
 
@@ -645,6 +646,9 @@ static void json_append_string(lua_State *l, strbuf_t *json, int lindex)
         case LUA_TLIGHTUSERDATA:
         case LUA_TUSERDATA:
             // This is something we're going to have to call into the metatable for.
+            // ServerLua: luaL_tolstring needs stack space for metatable lookup and
+            //  potential `__tostring` call
+            lua_checkstack(l, 5);
             str = luaL_tolstring(l, lindex, &len);
             break;
         default:
@@ -959,6 +963,8 @@ static void json_append_tagged_uuid(lua_State *l, strbuf_t *json, int lindex, bo
         // Normal string form - output canonical UUID format
         int top = lua_gettop(l);
         size_t len;
+        // luaL_tolstring needs stack space for metatable lookup and potential __tostring call
+        lua_checkstack(l, 5);
         const char *str = luaL_tolstring(l, lindex, &len);
         strbuf_append_string(json, "\"!u");
         strbuf_append_mem(json, str, len);
@@ -1311,12 +1317,27 @@ static int json_encode(lua_State *l)
 
     luaL_argcheck(l, lua_gettop(l) == 1, 1, "expected 1 argument");
 
+#if HARDSTACKTESTS
+    int pre_pad_top = lua_gettop(l);
+    lua_checkstack(l, LUA_MINSTACK);
+    while (lua_gettop(l) != LUA_MINSTACK - 1) {
+        lua_pushnil(l);
+    }
+    lua_pushvalue(l, pre_pad_top);
+    LUAU_ASSERT(lua_gettop(l) == LUA_MINSTACK);
+#endif
+
     try {
         json_append_data(l, &cfg, 0, &cfg.encode_buf);
     } catch(strbuf_exception &e) {
         luaL_error(l, "Overran encode size limits");
     }
     json = strbuf_string(&cfg.encode_buf, &len);
+
+#if HARDSTACKTESTS
+    lua_pop(l, LUA_MINSTACK - pre_pad_top);
+    LUAU_ASSERT(lua_gettop(l) == pre_pad_top);
+#endif
 
     lua_pushlstring(l, json, len);
 
@@ -1337,12 +1358,27 @@ static int json_encode_sl(lua_State *l)
     char *json;
     size_t len;
 
+#if HARDSTACKTESTS
+    int pre_pad_top = lua_gettop(l);
+    lua_checkstack(l, LUA_MINSTACK);
+    while (lua_gettop(l) != LUA_MINSTACK - 1) {
+        lua_pushnil(l);
+    }
+    lua_pushvalue(l, pre_pad_top);
+    LUAU_ASSERT(lua_gettop(l) == LUA_MINSTACK);
+#endif
+
     try {
         json_append_data(l, &cfg, 0, &cfg.encode_buf);
     } catch(strbuf_exception &e) {
         luaL_error(l, "Overran encode size limits");
     }
     json = strbuf_string(&cfg.encode_buf, &len);
+
+#if HARDSTACKTESTS
+    lua_pop(l, LUA_MINSTACK - pre_pad_top);
+    LUAU_ASSERT(lua_gettop(l) == pre_pad_top);
+#endif
 
     lua_pushlstring(l, json, len);
 
@@ -1695,7 +1731,7 @@ static void json_next_string_token(json_parse_t *json, json_token_t *token)
     char ch;
 
     /* Caller must ensure a string is next */
-    assert(*json->ptr == '"');
+    LUAU_ASSERT(*json->ptr == '"');
 
     /* Skip " */
     json->ptr++;
@@ -2127,6 +2163,16 @@ static int json_decode(lua_State *l)
 
     DEFER_STRBUF_DESTRUCTION(json.tmp);
 
+#if HARDSTACKTESTS
+    int pre_pad_top = lua_gettop(l);
+    lua_checkstack(l, LUA_MINSTACK);
+    while (lua_gettop(l) != LUA_MINSTACK - 1) {
+        lua_pushnil(l);
+    }
+    lua_pushvalue(l, pre_pad_top);
+    LUAU_ASSERT(lua_gettop(l) == LUA_MINSTACK);
+#endif
+
     json_next_token(&json, &token);
     json_process_value(l, &json, &token);
 
@@ -2135,6 +2181,13 @@ static int json_decode(lua_State *l)
 
     if (token.type != T_END)
         json_throw_parse_error(l, &json, "the end", &token);
+
+#if HARDSTACKTESTS
+    // Result is now at top, move it to slot 2 (after original input)
+    lua_replace(l, pre_pad_top + 1);
+    lua_pop(l, LUA_MINSTACK - pre_pad_top - 1);
+    LUAU_ASSERT(lua_gettop(l) == pre_pad_top + 1);
+#endif
 
     return 1;
 }
@@ -2166,6 +2219,16 @@ static int json_decode_sl(lua_State *l)
 
     DEFER_STRBUF_DESTRUCTION(json.tmp);
 
+#if HARDSTACKTESTS
+    int pre_pad_top = lua_gettop(l);
+    lua_checkstack(l, LUA_MINSTACK);
+    while (lua_gettop(l) != LUA_MINSTACK - 1) {
+        lua_pushnil(l);
+    }
+    lua_pushvalue(l, pre_pad_top);
+    LUAU_ASSERT(lua_gettop(l) == LUA_MINSTACK);
+#endif
+
     json_next_token(&json, &token);
     json_process_value(l, &json, &token);
 
@@ -2174,6 +2237,13 @@ static int json_decode_sl(lua_State *l)
 
     if (token.type != T_END)
         json_throw_parse_error(l, &json, "the end", &token);
+
+#if HARDSTACKTESTS
+    // Result is now at top, move it to slot 2 (after original input)
+    lua_replace(l, pre_pad_top + 1);
+    lua_pop(l, LUA_MINSTACK - pre_pad_top - 1);
+    LUAU_ASSERT(lua_gettop(l) == pre_pad_top + 1);
+#endif
 
     return 1;
 }

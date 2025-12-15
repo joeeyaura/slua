@@ -352,4 +352,13 @@ local bool_key_decoded = lljson.sldecode(bool_key_json)
 assert(bool_key_decoded[true] == "yes")
 assert(bool_key_decoded[false] == "no")
 
+-- Recursive table with uuid as value
+local recurse = {
+    -- This will use the most stack space of any of the encode paths
+    a=uuid(''),
+}
+recurse.b = recurse
+-- Should fail due to limits
+assert(not pcall(function() lljson.encode(recurse) end))
+
 return 'OK'
