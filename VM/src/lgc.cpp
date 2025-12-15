@@ -12,6 +12,7 @@
 #include "ludata.h"
 #include "lbuffer.h"
 #include "llsl.h"
+#include "lnumutils.h"
 
 #include <string.h>
 
@@ -1117,7 +1118,11 @@ static size_t getheaptrigger(global_State* g, size_t heapgoal)
     double allocationrate = (g->gcstats.atomicstarttotalsizebytes - g->gcstats.endtotalsizebytes) / allocationduration;
     double markduration = g->gcstats.atomicstarttimestamp - g->gcstats.starttimestamp;
 
-    int64_t expectedgrowth = int64_t(markduration * allocationrate);
+    // ServerLua: Overflow behavior is platform-dependent (x86 returns INT64_MIN, ARM saturates to INT64_MAX),
+    //  but the result is clamped below so the practical impact is minimal - just slightly different GC pacing.
+    // I don't trust that this won't come up again, so painting a big warning on it.
+    int64_t expectedgrowth;
+    luai_num2int64(expectedgrowth, markduration * allocationrate);
     int64_t offset = getheaptriggererroroffset(g);
     int64_t heaptrigger = heapgoal - (expectedgrowth + offset);
 

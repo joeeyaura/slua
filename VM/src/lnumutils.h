@@ -87,6 +87,20 @@ inline int luai_num2int_impl(double d)
 #define luai_num2int(i, d) ((i) = (int)(d))
 #endif
 
+// ServerLua: Suppress UBSan float-cast-overflow for int64_t casts
+#ifdef LUAU_ENABLE_ASAN
+#if defined(__clang__) || defined(__GNUC__)
+__attribute__((no_sanitize("float-cast-overflow")))
+#endif
+inline int64_t luai_num2int64_impl(double d)
+{
+    return (int64_t)d;
+}
+#define luai_num2int64(i, d) ((i) = luai_num2int64_impl(d))
+#else
+#define luai_num2int64(i, d) ((i) = (int64_t)(d))
+#endif
+
 // On MSVC in 32-bit, double to unsigned cast compiles into a call to __dtoui3, so we invoke x87->int64 conversion path manually
 #if defined(_MSC_VER) && defined(_M_IX86)
 #define luai_num2unsigned(i, n) \
