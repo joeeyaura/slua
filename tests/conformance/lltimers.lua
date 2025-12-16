@@ -644,6 +644,40 @@ assert(catchup_scheduled_times[2] < 45.2, "Second fire shows synced schedule (~4
 -- Clean up
 LLTimers:off(catchup_handler)
 
+-- Test minimum interval guarantee after catchup
+-- After waking from a long sleep near a catchup boundary, the SECOND tick should
+-- never fire faster than the specified interval. Regression test for "overcorrection" bug.
+setclock(0.0)
+local min_interval_fires = 0
+local min_interval_times = {}
+local min_interval_handler = LLTimers:every(1.0, function(scheduled_time)
+    min_interval_fires += 1
+    table.insert(min_interval_times, getclock())
+end)
+
+-- Timer created at T=0, first scheduled for T=1.0
+-- Simulate script disable/re-enable: jump forward 5.5s (past 2s catchup threshold)
+setclock(5.5)
+LLEvents:_handleEvent('timer')
+assert(min_interval_fires == 1, "First tick should fire immediately after wake")
+
+-- The second tick should be at least 1.0s from now, not at T=6.0
+setclock(6.0)  -- Only 0.5s later
+LLEvents:_handleEvent('timer')
+assert(min_interval_fires == 1, "Second tick should NOT fire at T=6.0 (only 0.5s after first)")
+
+-- Should fire at T=6.5 or later (1.0s after T=5.5)
+setclock(6.51)
+LLEvents:_handleEvent('timer')
+assert(min_interval_fires == 2, "Second tick should fire at ~T=6.5 (1.0s after first)")
+
+-- Verify the gap between fires was at least the interval
+local gap = min_interval_times[2] - min_interval_times[1]
+assert(gap >= 1.0, `Gap between ticks should be >= 1.0s, got {gap}`)
+
+-- Clean up
+LLTimers:off(min_interval_handler)
+
 
 -- Verify that user code can't get a reference to the timers tick function through `debug`
 local expected = {

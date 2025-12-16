@@ -615,6 +615,9 @@ static int lltimers_tick_cont(lua_State *L, [[maybe_unused]]int status)
                 {
                     new_next_run = next_run + (intervals_to_skip * interval);
                 }
+                // Ensure next tick is at least one full interval from now
+                // This prevents "fast ticks" when waking up close to a catchup boundary
+                new_next_run = std::max(new_next_run, start_time + interval);
                 did_clamp = true;
             }
 
