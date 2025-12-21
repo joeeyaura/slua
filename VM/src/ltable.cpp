@@ -38,6 +38,9 @@
 #define MAXBITS 26
 #define MAXSIZE (1 << MAXBITS)
 
+// ServerLua: alignment for large array sizes (caps wasted slots at this value - 1)
+constexpr int kLargeArrayAlign = 256;
+
 static_assert(offsetof(LuaNode, val) == 0, "Unexpected Node memory layout, pointer cast in gval2slot is incorrect");
 
 // TKey is bitpacked for memory efficiency so we need to validate bit counts for worst case
@@ -284,7 +287,7 @@ int luaH_next(lua_State* L, LuaTable* t, StkId key)
 
 #define getaboundary(t) (t->aboundary < 0 ? -t->aboundary : t->sizearray)
 
-static int computesizes(int nums[], int* narray)
+static int computesizes(int nums[], int* narray, int max_idx)
 {
     int i;
     int twotoi; // 2^i
@@ -305,6 +308,18 @@ static int computesizes(int nums[], int* narray)
         if (a == *narray)
             break; // all elements already counted
     }
+
+    // ServerLua: For large arrays, cap to 256-aligned size if all elements fit.
+    //  This is necessary because otherwise we'll use use the next power of 2
+    //  that fits 50%. For large array-like tables, that's not necessarily what
+    //  you want in a memory-constrained environment.
+    if (max_idx > 0 && n > kLargeArrayAlign && na > kLargeArrayAlign)
+    {
+        int capped = ((na + kLargeArrayAlign - 1) / kLargeArrayAlign) * kLargeArrayAlign;
+        if (capped < n && max_idx <= capped)
+            n = capped;
+    }
+
     *narray = n;
     LUAU_ASSERT(*narray / 2 <= na && na <= *narray);
     return na;
@@ -322,7 +337,7 @@ static int countint(double key, int* nums)
         return 0;
 }
 
-static int numusearray(const LuaTable* t, int* nums)
+static int numusearray(const LuaTable* t, int* nums, int* max_idx)
 {
     int lg;
     int ttlg;     // 2^lg
@@ -342,7 +357,11 @@ static int numusearray(const LuaTable* t, int* nums)
         for (; i <= lim; i++)
         {
             if (!ttisnil(&t->array[i - 1]))
+            {
                 lc++;
+                // ServerLua: track max_idx for size capping
+                *max_idx = i;
+            }
         }
         nums[lg] += lc;
         ause += lc;
@@ -350,7 +369,7 @@ static int numusearray(const LuaTable* t, int* nums)
     return ause;
 }
 
-static int numusehash(const LuaTable* t, int* nums, int* pnasize)
+static int numusehash(const LuaTable* t, int* nums, int* pnasize, int* max_idx)
 {
     int totaluse = 0; // total number of elements
     int ause = 0;     // summation of `nums'
@@ -361,7 +380,14 @@ static int numusehash(const LuaTable* t, int* nums, int* pnasize)
         if (!ttisnil(gval(n)))
         {
             if (ttisnumber(gkey(n)))
-                ause += countint(nvalue(gkey(n)), nums);
+            {
+                // ServerLua: support non-pow2 sizes for array in rehash()
+                double key = nvalue(gkey(n));
+                ause += countint(key, nums);
+                int k = arrayindex(key);
+                if (k > *max_idx)
+                    *max_idx = k;
+            }
             totaluse++;
         }
     }
@@ -511,18 +537,32 @@ static void rehash(lua_State* L, LuaTable* t, const TValue* ek)
 {
     int nums[MAXBITS + 1]; // nums[i] = number of keys between 2^(i-1) and 2^i
     for (int i = 0; i <= MAXBITS; i++)
-        nums[i] = 0;                          // reset counts
-    int nasize = numusearray(t, nums);        // count keys in array part
-    int totaluse = nasize;                    // all those keys are integer keys
-    totaluse += numusehash(t, nums, &nasize); // count keys in hash part
+        nums[i] = 0;                                    // reset counts
+    int max_idx = -1;                                   // ServerLua: track max array-eligible index
+    int nasize = numusearray(t, nums, &max_idx);        // count keys in array part
+    int totaluse = nasize;                              // all those keys are integer keys
+    totaluse += numusehash(t, nums, &nasize, &max_idx); // count keys in hash part
 
     // count extra key
     if (ttisnumber(ek))
+    {
+        // ServerLua: we need to keep track of the _max_.
+        int k = arrayindex(nvalue(ek));
+        if (k > 0 && k > max_idx)
+            max_idx = k;
         nasize += countint(nvalue(ek), nums);
+    }
     totaluse++;
 
+    // ServerLua: Don't try to be conservative about array allocation size,
+    //  this is a system table.
+    if (t->memcat < 2)
+    {
+        max_idx = -1;
+    }
+
     // compute new size for array part
-    int na = computesizes(nums, &nasize);
+    int na = computesizes(nums, &nasize, max_idx);
     int nh = totaluse - na;
 
     // enforce the boundary invariant; for performance, only do hash lookups if we must

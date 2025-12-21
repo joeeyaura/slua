@@ -21,6 +21,7 @@
 #include "../VM/src/mono_strings.h"
 #include "../VM/src/lapi.h"
 #include "../VM/src/lgc.h"
+#include "../VM/src/ltable.h"
 
 #include <fstream>
 #include <string>
@@ -156,6 +157,16 @@ static int test_integer_call(lua_State *L)
     lua_settop(L, 1);
     lua_pushunsigned(L, (unsigned int)LSLIType::LST_INTEGER);
     return lsl_cast(L);
+}
+
+// Returns (array_size, hash_size) for a table - for testing table sizing behavior
+static int lua_table_sizes(lua_State* L)
+{
+    luaL_checktype(L, 1, LUA_TTABLE);
+    LuaTable* t = hvalue(luaA_toobject(L, 1));
+    lua_pushinteger(L, t->sizearray);
+    lua_pushinteger(L, t->node == &luaH_dummynode ? 0 : sizenode(t));
+    return 2;
 }
 
 // Helper callback that enforces reachability-based memory limits
@@ -973,6 +984,16 @@ TEST_CASE("Metamethods and library callbacks receive interrupt checks")
 
         lua_pushcfunction(L, test_sort_callback, "test_sort_callback");
         lua_setglobal(L, "test_sort_callback");
+    });
+}
+
+TEST_CASE("Table Sizing")
+{
+    runConformance("table_sizing.lua", nullptr, [](lua_State *L) {
+        lua_pushcfunction(L, lua_table_sizes, "table_sizes");
+        lua_setglobal(L, "table_sizes");
+        lua_pushcfunction(L, [](lua_State *L) {lua_setmemcat(L, luaL_checkinteger(L, 1)); return 0;}, "change_memcat");
+        lua_setglobal(L, "change_memcat");
     });
 }
 
