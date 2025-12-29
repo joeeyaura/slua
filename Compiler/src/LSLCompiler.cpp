@@ -939,11 +939,12 @@ bool LuauVisitor::visit(LSLListExpression *list_expr)
         {
             mBuilder->emitABC(LOP_SETTABLEN, source_id, target_id, idx);
         }
-        else if (idx <= INT16_MAX)
+        else if (idx < INT16_MAX)
         {
             // index is large, so we must load a number into a register first to set the element
             auto nreg_id = allocReg(list_expr);
-            mBuilder->emitAD(LOP_LOADN, nreg_id, (int16_t)idx);
+            // Unlike `SETTABLEN`, this wants a 1-based index.
+            mBuilder->emitAD(LOP_LOADN, nreg_id, (int16_t)(idx + 1));
             mBuilder->emitABC(LOP_SETTABLE, source_id, target_id, nreg_id);
         }
         else

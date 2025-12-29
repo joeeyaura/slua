@@ -1051,6 +1051,11 @@ TEST_CASE("RK optimization issues")
     runConformance("rk_issues.lsl");
 }
 
+TEST_CASE("Long lists")
+{
+    runConformance("longlist.lsl");
+}
+
 
 static std::string mono_to_lower_string(const std::string &str)
 {
