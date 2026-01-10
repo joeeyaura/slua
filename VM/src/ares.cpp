@@ -1692,7 +1692,9 @@ u_proto(Info *info) {                                            /* ... proto */
   /* Read child protos. */
   SAFE_ALLOC_VECTOR(info->L, p->p, 0, int, p->sizep, Proto*);
   /* Null all entries to avoid confusing the GC. */
-  memset(p->p, 0, p->sizep * sizeof(Proto*));
+  if (p->p) {
+    memset(p->p, 0, p->sizep * sizeof(Proto*));
+  }
   pushpath(info, ".protos");
   for (i = 0, n = p->sizep; i < n; ++i) {
     Proto *cp;

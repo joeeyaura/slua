@@ -598,8 +598,10 @@ Vertex* lua_vertex_get(lua_State* L, int idx)
 
 static int lua_vertex(lua_State* L)
 {
-    const float* pos = luaL_checkvector(L, 1);
-    const float* normal = luaL_checkvector(L, 2);
+    // Copy vectors before lua_vertex_push which may reallocate stack (HARDSTACKTESTS)
+    float pos[3], normal[3];
+    memcpy(pos, luaL_checkvector(L, 1), sizeof(pos));
+    memcpy(normal, luaL_checkvector(L, 2), sizeof(normal));
     Vec2* uv = lua_vec2_get(L, 3);
 
     Vertex* data = lua_vertex_push(L);

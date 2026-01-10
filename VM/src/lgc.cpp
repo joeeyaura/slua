@@ -1104,6 +1104,10 @@ static int64_t getheaptriggererroroffset(global_State* g)
     return int64_t(totalTerm * 1024);
 }
 
+// ServerLua: Suppress UBSan for intentional overflow in GC pacing arithmetic
+#if defined(__clang__) || defined(__GNUC__)
+__attribute__((no_sanitize("signed-integer-overflow")))
+#endif
 static size_t getheaptrigger(global_State* g, size_t heapgoal)
 {
     // adjust threshold based on a guess of how many bytes will be allocated between the cycle start and sweep phase
