@@ -80,7 +80,7 @@ pushd "$top"
             cp -v "Release/Luau.VM.lib" "$stage/lib/release/"
             cp -v "Release/Luau.Common.lib" "$stage/lib/release/"
 
-            cp -v Release/luau.exe "$stage/bin/"
+            cp -v Release/slua.exe "$stage/bin/"
         ;;
         darwin*|linux*)
             # Continue compiling with asserts for now
@@ -101,7 +101,7 @@ pushd "$top"
             cp -v "libLuau.Config.a" "$stage/lib/release"
             cp -v "libLuau.VM.a" "$stage/lib/release"
 
-            cp -v "luau" "$stage/bin/"
+            cp -v "slua" "$stage/bin/"
 
             # Run the conformance test for good measure
             "${stage}/build/Luau.Conformance"

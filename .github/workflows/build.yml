@@ -60,26 +60,26 @@ jobs:
         sudo apt-get install g++-multilib
     - name: make tests
       run: |
-        LDFLAGS=-m${{matrix.addrsize}} CXXFLAGS="-m${{matrix.addrsize}} ${{matrix.cflags}}" CFLAGS="-m${{matrix.addrsize}} ${{matrix.cflags}}" make -j4 config=sanitize ${{ matrix.addrsize == '64' && 'native=1' || ''}} luau-tests
+        LDFLAGS=-m${{matrix.addrsize}} CXXFLAGS="-m${{matrix.addrsize}} ${{matrix.cflags}}" CFLAGS="-m${{matrix.addrsize}} ${{matrix.cflags}}" make -j4 config=sanitize ${{ matrix.addrsize == '64' && 'native=1' || ''}} slua-tests
     - name: run tests
       run: |
-        ./luau-tests
-        ./luau-tests --fflags=true
+        ./slua-tests
+        ./slua-tests --fflags=true
     - name: run extra conformance tests
       if: matrix.os.name != 'ubuntu-32bit'
       run: |
-        ./luau-tests -ts=Conformance -O2
-        ./luau-tests -ts=Conformance -O2 --fflags=true
-        ./luau-tests -ts=Conformance --codegen
-        ./luau-tests -ts=Conformance --codegen --fflags=true
-        ./luau-tests -ts=Conformance --codegen -O2
-        ./luau-tests -ts=Conformance --codegen -O2 --fflags=true
+        ./slua-tests -ts=Conformance -O2
+        ./slua-tests -ts=Conformance -O2 --fflags=true
+        ./slua-tests -ts=Conformance --codegen
+        ./slua-tests -ts=Conformance --codegen --fflags=true
+        ./slua-tests -ts=Conformance --codegen -O2
+        ./slua-tests -ts=Conformance --codegen -O2 --fflags=true
     - name: make cli
       run: |
-         LDFLAGS=-m${{matrix.addrsize}} CXXFLAGS="-m${{matrix.addrsize}} ${{matrix.cflags}} -DHARDSTACKTESTS=1" CFLAGS="-m${{matrix.addrsize}} ${{matrix.cflags}}" make -j4 config=sanitize ${{ matrix.addrsize == '64' && 'native=1' || ''}} werror=1 luau luau-analyze luau-compile # match config with tests to improve build time
-         ./luau tests/conformance/assert.luau
-         ./luau-analyze tests/conformance/assert.luau
-         ./luau-compile tests/conformance/assert.luau
+         LDFLAGS=-m${{matrix.addrsize}} CXXFLAGS="-m${{matrix.addrsize}} ${{matrix.cflags}} -DHARDSTACKTESTS=1" CFLAGS="-m${{matrix.addrsize}} ${{matrix.cflags}}" make -j4 config=sanitize ${{ matrix.addrsize == '64' && 'native=1' || ''}} werror=1 slua slua-analyze slua-compile # match config with tests to improve build time
+         ./slua tests/conformance/assert.luau
+         ./slua-analyze tests/conformance/assert.luau
+         ./slua-compile tests/conformance/assert.luau
 
   windows:
     runs-on: windows-2022
@@ -122,9 +122,9 @@ jobs:
         shell: bash # necessary for fail-fast
         run: |
           cmake --build . --target Luau.Repl.CLI Luau.Analyze.CLI Luau.Compile.CLI --config RelWithDebInfo # match config with tests to improve build time
-          RelWithDebInfo/luau tests/conformance/assert.luau
-          RelWithDebInfo/luau-analyze tests/conformance/assert.luau
-          RelWithDebInfo/luau-compile tests/conformance/assert.luau
+          RelWithDebInfo/slua tests/conformance/assert.luau
+          RelWithDebInfo/slua-analyze tests/conformance/assert.luau
+          RelWithDebInfo/slua-compile tests/conformance/assert.luau
 
   coverage:
     runs-on: ubuntu-22.04

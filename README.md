@@ -52,7 +52,7 @@ cmake --build . --target Luau.Analyze.CLI --config RelWithDebInfo
 Alternatively, on Linux and macOS, you can also use `make`:
 
 ```sh
-make config=release luau luau-analyze
+make config=release slua slua-analyze
 ```
 
 To integrate SLua into your CMake application projects as a library, at the minimum, you'll need to depend on `Luau.Compiler` and `Luau.VM` projects. From there you need to create a new Luau state (using Lua 5.x API such as `lua_newstate`), compile source to bytecode and load it into the VM like this:

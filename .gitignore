@@ -15,6 +15,11 @@
 /luau-analyze
 /luau-bytecode
 /luau-compile
+/slua
+/slua-tests
+/slua-analyze
+/slua-bytecode
+/slua-compile
 __pycache__
 /stage
 .cache
