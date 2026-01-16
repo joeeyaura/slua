@@ -438,6 +438,7 @@ integer llSetMemoryLimit( integer Limit )
 void llSetObjectDesc( string Description )
 void llSetObjectName( string Name )
 void llSetObjectPermMask( integer PermissionFlag, integer PermissionMask )
+integer llSetParcelForSale( integer ForSale, list Options )
 void llSetParcelMusicURL( string URL )
 void llSetPayPrice( integer Price, list QuickButtons )
 void llSetPhysicsMaterial( integer MaterialBits, float GravityMultiplier, float Restitution, float Friction, float Density )
@@ -1010,6 +1011,15 @@ const integer PARCEL_MEDIA_COMMAND_TIME = 6
 const integer PARCEL_MEDIA_COMMAND_TYPE = 10
 const integer PARCEL_MEDIA_COMMAND_UNLOAD = 8
 const integer PARCEL_MEDIA_COMMAND_URL = 5
+const integer PARCEL_SALE_AGENT = 2
+const integer PARCEL_SALE_ERROR_BAD_PARAMS = 5
+const integer PARCEL_SALE_ERROR_INVALID_PRICE = 4
+const integer PARCEL_SALE_ERROR_IN_ESCROW = 3
+const integer PARCEL_SALE_ERROR_NO_PARCEL = 1
+const integer PARCEL_SALE_ERROR_NO_PERMISSIONS = 2
+const integer PARCEL_SALE_OBJECTS = 3
+const integer PARCEL_SALE_OK = 0
+const integer PARCEL_SALE_PRICE = 1
 const integer PASSIVE = 0x4
 const integer PASS_ALWAYS = 1
 const integer PASS_IF_NOT_HANDLED = 0
@@ -1019,21 +1029,22 @@ const integer PAYMENT_INFO_ON_FILE = 1
 const integer PAYMENT_INFO_USED = 2
 const integer PAY_DEFAULT = -2
 const integer PAY_HIDE = -1
-const integer PERMISSION_ATTACH = 0x20
-const integer PERMISSION_CHANGE_JOINTS = 0x100
-const integer PERMISSION_CHANGE_LINKS = 0x80
-const integer PERMISSION_CHANGE_PERMISSIONS = 0x200
-const integer PERMISSION_CONTROL_CAMERA = 0x800
-const integer PERMISSION_DEBIT = 0x2
-const integer PERMISSION_OVERRIDE_ANIMATIONS = 0x8000
-const integer PERMISSION_RELEASE_OWNERSHIP = 0x40
-const integer PERMISSION_REMAP_CONTROLS = 0x8
-const integer PERMISSION_RETURN_OBJECTS = 65536
-const integer PERMISSION_SILENT_ESTATE_MANAGEMENT = 0x4000
-const integer PERMISSION_TAKE_CONTROLS = 0x4
-const integer PERMISSION_TELEPORT = 0x1000
-const integer PERMISSION_TRACK_CAMERA = 0x400
-const integer PERMISSION_TRIGGER_ANIMATION = 0x10
+const integer PERMISSION_ATTACH = 0x00020
+const integer PERMISSION_CHANGE_JOINTS = 0x00100
+const integer PERMISSION_CHANGE_LINKS = 0x00080
+const integer PERMISSION_CHANGE_PERMISSIONS = 0x00200
+const integer PERMISSION_CONTROL_CAMERA = 0x00800
+const integer PERMISSION_DEBIT = 0x00002
+const integer PERMISSION_OVERRIDE_ANIMATIONS = 0x08000
+const integer PERMISSION_PRIVILEGED_LAND_ACCESS = 0x80000
+const integer PERMISSION_RELEASE_OWNERSHIP = 0x00040
+const integer PERMISSION_REMAP_CONTROLS = 0x00008
+const integer PERMISSION_RETURN_OBJECTS = 0x10000
+const integer PERMISSION_SILENT_ESTATE_MANAGEMENT = 0x04000
+const integer PERMISSION_TAKE_CONTROLS = 0x00004
+const integer PERMISSION_TELEPORT = 0x01000
+const integer PERMISSION_TRACK_CAMERA = 0x00400
+const integer PERMISSION_TRIGGER_ANIMATION = 0x00010
 const integer PERM_ALL = 0x7FFFFFFF
 const integer PERM_COPY = 0x8000
 const integer PERM_MODIFY = 0x4000
