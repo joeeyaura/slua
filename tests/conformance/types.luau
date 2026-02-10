@@ -10,6 +10,8 @@ local ignore =
 	-- Ares: Should _actually_ only be in tests soonish.
 	"_G.ares",
 	"_G.dangerouslyexecuterequiredmodule",
+	"_G.table.append",
+	"_G.table.extend",
 
 	-- what follows is a set of mismatches that hopefully eventually will go down to 0
 	"_G.require", -- need to move to Roblox type defs

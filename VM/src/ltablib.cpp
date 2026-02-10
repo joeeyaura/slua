@@ -233,6 +233,52 @@ static int tmove(lua_State* L)
     return 1;
 }
 
+// ServerLua: table.append(t, ...) - appends varargs to end of table
+// Largely a replacement for consecutive `table.insert()` calls.
+static int tappend(lua_State* L)
+{
+    // Need some extra slots for actually appending
+    lua_checkstack(L, 2);
+
+    luaL_checktype(L, 1, LUA_TTABLE);
+    int orig_len = lua_objlen(L, 1);
+    int top = lua_gettop(L);
+
+    for (int i = 2; i <= top; i++)
+    {
+        lua_pushvalue(L, i);
+        lua_rawseti(L, 1, orig_len + (i - 1));
+    }
+
+    return 0;
+}
+
+// ServerLua: table.extend(dst, src) - appends array portion of src onto dst
+// Again, this is sugar for `table.move(src, 1, #src, #dst+1, dst)`
+// which is kind of an arcane and obnoxious incantation. Bespoke array-like
+// list construction is unfortunately a pretty common requirement for `ll.*()` functions,
+// so it makes sense to provide as a first-class member of the stdlib.
+static int textend(lua_State* L)
+{
+    lua_checkstack(L, 6);
+
+    luaL_checktype(L, 1, LUA_TTABLE);
+    luaL_checktype(L, 2, LUA_TTABLE);
+    int dn = lua_objlen(L, 1);
+    int sn = lua_objlen(L, 2);
+
+    // Rearrange stack: (dst, src) -> (src, 1, sn, dn+1, dst)
+    lua_insert(L, 1);
+    lua_pushinteger(L, 1);
+    lua_insert(L, 2);
+    lua_pushinteger(L, sn);
+    lua_insert(L, 3);
+    lua_pushinteger(L, dn + 1);
+    lua_insert(L, 4);
+
+    return tmove(L);
+}
+
 static void addfield(lua_State* L, luaL_Strbuf* b, int i, LuaTable* t)
 {
     if (t && unsigned(i - 1) < unsigned(t->sizearray) && ttisstring(&t->array[i - 1]))
@@ -642,6 +688,9 @@ static const luaL_Reg tab_funcs[] = {
     {"isfrozen", tisfrozen},
     {"clone", tclone},
     {"shrink", tshrink},
+    // ServerLua: table.append, table.extend
+    {"append", tappend},
+    {"extend", textend},
     {NULL, NULL},
 };
 

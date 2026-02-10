@@ -754,4 +754,73 @@ assert((function ()
   return t.hi
 end)() == nil)
 
+-- ServerLua: table.append
+do
+  -- append to empty table
+  local t = {}
+  table.append(t, 1, 2, 3)
+  assert(#t == 3 and t[1] == 1 and t[2] == 2 and t[3] == 3)
+
+  -- append to non-empty table
+  local t2 = {10, 20}
+  table.append(t2, 30, 40)
+  assert(#t2 == 4 and t2[3] == 30 and t2[4] == 40)
+
+  -- single value (equivalent to table.insert(t, v))
+  local t3 = {1}
+  table.append(t3, 2)
+  assert(#t3 == 2 and t3[2] == 2)
+
+  -- no values (no-op)
+  local t4 = {1, 2}
+  table.append(t4)
+  assert(#t4 == 2)
+
+  -- mixed types
+  local t5 = {}
+  table.append(t5, 1, "hello", true, nil)
+  assert(t5[1] == 1 and t5[2] == "hello" and t5[3] == true)
+
+  -- frozen table should error
+  assert(pcall(table.append, table.freeze({1, 2}), 3) == false)
+
+  -- returns nil
+  assert(table.append({1}, 2) == nil)
+end
+
+-- ServerLua: table.extend
+do
+  -- basic extend
+  local t = {1, 2}
+  table.extend(t, {3, 4})
+  assert(#t == 4 and t[1] == 1 and t[2] == 2 and t[3] == 3 and t[4] == 4)
+
+  -- extend empty destination
+  local t2 = {}
+  table.extend(t2, {10, 20})
+  assert(#t2 == 2 and t2[1] == 10 and t2[2] == 20)
+
+  -- extend with empty source (no-op)
+  local t3 = {1, 2}
+  table.extend(t3, {})
+  assert(#t3 == 2)
+
+  -- self-extend
+  local t4 = {1, 2, 3}
+  table.extend(t4, t4)
+  assert(#t4 == 6 and t4[4] == 1 and t4[5] == 2 and t4[6] == 3)
+
+  -- frozen dst should error
+  assert(pcall(table.extend, table.freeze({1, 2}), {3}) == false)
+
+  -- Extra arg does nothing
+  local t5 = {1, 2}
+  table.extend(t5, {3, 4}, {5, 6, 7, 8})
+  assert(#t5 == 4)
+
+  -- Returns destination table
+  local t6 = {1, 2}
+  assert(table.extend(t6, {3, 4}) == t6)
+end
+
 return"OK"
