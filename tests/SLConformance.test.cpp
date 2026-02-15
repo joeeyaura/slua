@@ -285,7 +285,7 @@ static StateRef runConformance(const char* name, void (*yield)(lua_State* L) = n
     compileOrThrow(bcb, source);
     std::string bytecode = bcb.getBytecode();
 
-    lua_setmemcat(L, 2);
+    lua_setmemcat(L, LUA_FIRST_USER_MEMCAT);
     int result = luau_load(L, chunkname.c_str(), bytecode.c_str(), bytecode.length(), 0);
     if (result)
     {
@@ -303,7 +303,7 @@ static StateRef runConformance(const char* name, void (*yield)(lua_State* L) = n
     lua_pop(GL, 1);
 
     // Ensure closures created during execution have correct memcat
-    lua_setmemcat(L, 2);
+    lua_setmemcat(L, LUA_FIRST_USER_MEMCAT);
 
     int status;
     do
@@ -479,7 +479,7 @@ TEST_CASE("UUID interning")
     lua_gc(L, LUA_GCCOLLECT, 0);
 
     // Test that UUIDs have value semantics in user weak tables (memcat > 1)
-    lua_setmemcat(L, 2);
+    lua_setmemcat(L, LUA_FIRST_USER_MEMCAT);
 
     // Create a weak-keyed table
     int user_weak_table_idx = create_weak_table(L, "k");
@@ -720,7 +720,7 @@ TEST_CASE("Can break at tail of LOP_CALL")
 TEST_CASE("String comparisons work with a non-default memcat")
 {
     runConformance("string_equality.lua", nullptr, [](lua_State *L) {
-        lua_setmemcat(L, 2);
+        lua_setmemcat(L, LUA_FIRST_USER_MEMCAT);
     });
 }
 

@@ -38,7 +38,7 @@ Some things that are meant to be opaque to the user, like the enforced iteration
 tables, are allocated with memcat 0 so a table having been deserialized isn't treated as a penalty.
 
 Everything that is the "fault" of a user (most allocations that happen while user code is in control) is tagged
-with a memcat of 2 or above.
+with a user memcat (>= LUA_FIRST_USER_MEMCAT).
 
 This gets us part of the way there, giving us a way to distinguish between objects that contribute to memory limits
 and those that don't.
@@ -50,15 +50,15 @@ This allows us to have everything in a single VM with a single heap and a single
 memory limits within a script.
 
 We will deal with the problem of string interning sharing string instances across scripts by "charging" users for
-all memcat 2 string instances that do _not_ occur within the bytecode of the current script. If they are constant's
+all user memcat string instances that do _not_ occur within the bytecode of the current script. If they are constant's
 from the user's script, they will be treated as "free" since we already consider bytecode size when deciding how much
 a user script may allocate dynamically.
 
-We can do this by ensuring all `luau_load()` calls are done with memcat 2 (giving `Proto`s and all their 
-descendants memcat 2), and walking the protos when the script is first loaded to pick up all `GCObject`s that
+We can do this by ensuring all `luau_load()` calls are done with a user memcat (giving `Proto`s and all their
+descendants a user memcat), and walking the protos when the script is first loaded to pick up all `GCObject`s that
 should be considered "free" for the rest of the runtime.
 
-We can use the existing user thread enumeration to store all memcat 2 objects in an unsorted set just after the script
+We can use the existing user thread enumeration to store all user memcat objects in an unsorted set just after the script
 is loaded, then pre-load that set into the `visited` nodes when later enumerating the user thread. That way we can have
 `TString`s that are treated as "free" for some scripts, but not for others, even if they use the same interned
 `TString` under the hood, and users aren't "charged" for strings that would be in the `Proto` constants.

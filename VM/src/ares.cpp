@@ -303,9 +303,16 @@ static char const kHeader[] = { 'A', 'R', 'E', 'S' };
 static const lua_Number kHeaderNumber = (lua_Number)-1.234567890;
 
 /* Version number for the file format. */
-static const uint32_t kCurrentVersion = 1;
+static const uint32_t kCurrentVersion = 2;
 /* Old format magic bytes (0x08, 0x1B, 0xDE, 0x83 in little-endian). */
 static const uint32_t kOldMagicBytes = 0x83DE1B08;
+
+
+// Return whether a type is a GC object that carries a serialized memcat.
+static inline bool type_has_memcat(uint8_t type) {
+    return type == LUA_TSTRING || type == LUA_TBUFFER || type == LUA_TTABLE ||
+           type == LUA_TFUNCTION || type == LUA_TUSERDATA || type == LUA_TTHREAD;
+}
 
 /* Stack indices of some internal values/tables, to avoid magic numbers. */
 #define PERMIDX 1
@@ -2225,6 +2232,9 @@ p_thread(Info *info) {                                          /* ... thread */
 
   /* Write general information. */
   WRITE_VALUE(thread->status, uint8_t);
+  // ServerLua:
+  // Write thread's activememcat
+  WRITE_VALUE(thread->activememcat, uint8_t);
 //  WRITE_VALUE(eris_savestackidx(thread,
 //    eris_restorestack(thread, thread->errfunc)), size_t);
   // no err func!
@@ -2430,6 +2440,10 @@ u_thread(Info *info) {                                                 /* ... */
 
   /* Read general information. */
   thread->status = READ_VALUE(uint8_t);
+  // ServerLua:
+  // Read thread's activememcat in version >= 2
+  if (info->u.upi.version >= 2)
+      thread->activememcat = READ_VALUE(uint8_t);
   /* size_t _errfunc = */ READ_VALUE(ares_size_t);
   /* These are only used while a thread is being executed or can be deduced:
   thread->nCcalls = READ_VALUE(uint16_t);
@@ -2650,6 +2664,13 @@ persist_typed(Info *info, int type) {                 /* perms reftbl ... obj */
   ++info->level;
 
   WRITE_VALUE(type, uint8_t);
+  // ServerLua:
+  // Write memcat for GC object types
+  if (type_has_memcat(type))
+  {
+      const TValue* tv = luaA_toobject(info->L, -1);
+      WRITE_VALUE(gcvalue(tv)->gch.memcat, uint8_t);
+  }
   switch(type) {
     case LUA_TBOOLEAN:
       p_boolean(info);
@@ -2821,6 +2842,14 @@ unpersist(Info *info) {                                   /* perms reftbl ... */
   eris_checkstack(info->L, 1);
   {
     const uint8_t type = READ_VALUE(uint8_t);
+    // ServerLua:
+    // Read memcat for GC object types in version >= 2
+    uint8_t obj_memcat = info->L->activememcat;
+    if (info->u.upi.version >= 2 && type_has_memcat(type))
+    {
+        obj_memcat = READ_VALUE(uint8_t);
+    }
+    MemcatGuard guard(info->L, obj_memcat);
     switch (type) {
       case LUA_TNIL:
         lua_pushnil(info->L);
@@ -3818,7 +3847,6 @@ eris_fork_thread(lua_State *Lforker, uint8_t default_state, uint8_t memcat) {
       lua_remove(Lforker, -2);  // remove state string
       return nullptr;
     }
-    eris_assert(lua_getmemcat(lua_tothread(Lforker, -1)) == memcat);
   } else {
     // ServerLua: Make sure the error message is included (error types with messages on stack)
     eris_assert(status == LUA_ERRRUN || status == LUA_ERRKILL);

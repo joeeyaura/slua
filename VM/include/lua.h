@@ -376,6 +376,10 @@ LUA_API void lua_setmemcat(lua_State* L, int category);
 LUA_API int lua_getmemcat(lua_State* L);
 LUA_API size_t lua_totalbytes(lua_State* L, int category);
 
+// ServerLua:
+// First user-assignable memory category; categories below this are reserved for system use
+#define LUA_FIRST_USER_MEMCAT 10
+
 /*
 ** miscellaneous functions
 */
@@ -433,7 +437,7 @@ LUA_API int lua_totalmemoverhead(lua_State *L);
 // Gets the total size of all user-allocated objects reachable from a user thread.
 // If free_objects is provided, objects in that set will be excluded from the size calculation.
 LUA_API size_t lua_userthreadsize(lua_State *L, const lua_OpaqueGCObjectSet* free_objects);
-// Collects all memcat 2+ objects reachable from a user thread into a set.
+// Collects all user memcat (>= LUA_FIRST_USER_MEMCAT) objects reachable from a user thread into a set.
 // Intended to be called immediately after luau_load() to capture bytecode constants.
 LUA_API lua_OpaqueGCObjectSet lua_collectfreeobjects(lua_State *L);
 

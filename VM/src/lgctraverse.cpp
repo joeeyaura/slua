@@ -33,8 +33,8 @@ static void enqueueobj(ReachableContext* ctx, GCObject* obj)
 
     // We allow traversing threads even if they have a system memcat so long as their _active_
     // memcat is a user memcat.
-    bool eligible_thread = (obj->gch.tt == LUA_TTHREAD && gco2th(obj)->activememcat >= 2);
-    if ((eligible_thread || obj->gch.memcat >= 2) && ctx->visited.insert(obj).second)
+    bool eligible_thread = (obj->gch.tt == LUA_TTHREAD && gco2th(obj)->activememcat >= LUA_FIRST_USER_MEMCAT);
+    if ((eligible_thread || obj->gch.memcat >= LUA_FIRST_USER_MEMCAT) && ctx->visited.insert(obj).second)
     {
         ctx->queue.push(obj);
     }
@@ -397,7 +397,7 @@ void luaC_enumreachableuserallocs(
         ctx.queue.pop();
 
         // Call the user-provided traversal callback
-        if (current->gch.memcat >= 2)
+        if (current->gch.memcat >= LUA_FIRST_USER_MEMCAT)
             node(context, current, current->gch.tt, current->gch.memcat, calcgcosize(current));
 
         // Take any new references the current node has and add them to the queue
@@ -418,8 +418,8 @@ lua_OpaqueGCObjectSet luaC_collectfreeobjects(lua_State* L)
         GCObject* current = ctx.queue.front();
         ctx.queue.pop();
 
-        // Collect memcat 2+ objects into the set
-        if (current->gch.memcat >= 2)
+        // Collect user memcat objects into the set
+        if (current->gch.memcat >= LUA_FIRST_USER_MEMCAT)
             free_objects.insert(current);
 
         // Traverse child references

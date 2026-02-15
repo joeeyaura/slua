@@ -507,7 +507,7 @@ void* luaM_new_(lua_State* L, size_t nsize, uint8_t memcat)
     global_State* g = L->global;
 
     // ServerLua: enforce memory allocation limits in user-owned memcats
-    if (LUAU_LIKELY(!!g->cb.beforeallocate) && memcat > 1)
+    if (LUAU_LIKELY(!!g->cb.beforeallocate) && memcat >= LUA_FIRST_USER_MEMCAT)
     {
         // But don't do invoke the hook if GC is disabled
         if (LUAU_LIKELY(g->GCthreshold != SIZE_MAX) && g->cb.beforeallocate(L, 0, nsize))
@@ -546,7 +546,7 @@ GCObject* luaM_newgco_(lua_State* L, size_t nsize, uint8_t memcat)
     global_State* g = L->global;
 
     // ServerLua: enforce memory allocation limits in user-owned memcats
-    if (LUAU_LIKELY(!!g->cb.beforeallocate) && memcat > 1)
+    if (LUAU_LIKELY(!!g->cb.beforeallocate) && memcat >= LUA_FIRST_USER_MEMCAT)
     {
         if (LUAU_LIKELY(g->GCthreshold != SIZE_MAX) && g->cb.beforeallocate(L, 0, nsize))
             luaD_throw(L, LUA_ERRMEM);
@@ -658,7 +658,7 @@ void* luaM_realloc_(lua_State* L, void* block, size_t osize, size_t nsize, uint8
     LUAU_ASSERT((osize == 0) == (block == NULL));
 
     // ServerLua: enforce memory allocation limits in user-owned memcats
-    if (LUAU_LIKELY(!!g->cb.beforeallocate) && memcat > 1)
+    if (LUAU_LIKELY(!!g->cb.beforeallocate) && memcat >= LUA_FIRST_USER_MEMCAT)
     {
         if (LUAU_LIKELY(g->GCthreshold != SIZE_MAX) && g->cb.beforeallocate(L, osize, nsize))
             luaD_throw(L, LUA_ERRMEM);

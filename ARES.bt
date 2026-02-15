@@ -622,17 +622,28 @@ typedef struct {
     }
 } Object<optimize=false, bgcolor=cLtPurple, read=ReadObject>;
 
+// GC object header with memcat (version >= 2).
+// Declarations leak into the calling struct.
+void ParseGCHeader() {
+    if (header.version >= 2) {
+        uint8_t memcat <bgcolor=cLtYellow>;
+    }
+}
+
 typedef struct {
+    ParseGCHeader();
     size_t length;      /* The length of the string */
     char str[length];   /* The actual string (not always null terminated) */
 } String <read=this.str>;
 
 typedef struct {
+    ParseGCHeader();
     size_t length;      /* The length of the buffer */
     char data[length];   /* The actual buffer data */
 } Buffer <read=this.data>;
 
 struct Table {
+    ParseGCHeader();
     uint8_t read_only;
     uint8_t safe_env;
     int array_size;
@@ -654,6 +665,7 @@ struct Table {
 
 
 typedef struct {
+    ParseGCHeader();
     uint8_t utag;       /* Userdata tag */
     switch(utag)
     {
@@ -696,6 +708,7 @@ typedef struct {
 } LightUserdata <read=Str("%c : %Lu", this.lutag, this.ptr)>;
 
 struct Closure {
+    ParseGCHeader();
     uint8_t isCClosure; /* 1 if the closure is a C closure; 0 otherwise */
     uint8_t nups;       /* Number of upvalues the function uses */
     if (isCClosure) {
@@ -773,6 +786,7 @@ struct Proto {
 };
 
 struct Thread {
+    ParseGCHeader();
     Object env;
     int stacksize;      /* The overall size of the stack filled with objects,
                          * including all stack frames. */
@@ -780,6 +794,10 @@ struct Thread {
     Object stack[top];    /* All stack values, bottom up */
 
     lua_Status status;     /* current thread status (ok, yield) */
+    // version >= 2 writes activememcat
+    if (header.version >= 2) {
+        uint8_t activememcat <bgcolor=cLtYellow>;
+    }
     size_t errfunc;     /* NOT USED current error handling function (stack index) */
 
     int32_t num_cis;        /* number of callinfo frames */

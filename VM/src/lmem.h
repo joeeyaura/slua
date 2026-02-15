@@ -45,4 +45,4 @@ protected:
 };
 
 #define LUAU_TRACK_UNROOTED_ALLOCS() [[maybe_unused]] UnrootedAllocTracker _tracker{L};
-#define LUAU_MAYBE_TRACK_UNROOTED(L, size) do { if ((L)->activememcat > 1) { L->global->unrooteduserallocs += (size); }} while (0);
+#define LUAU_MAYBE_TRACK_UNROOTED(L, size) do { if ((L)->activememcat >= LUA_FIRST_USER_MEMCAT) { L->global->unrooteduserallocs += (size); }} while (0);

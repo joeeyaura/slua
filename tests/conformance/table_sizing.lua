@@ -144,11 +144,11 @@ t[1537] = true
 check_sizes(t, 1664, 4, "after spillover - array grew")
 assert(t[1538] == true, "1538 still present")
 
--- System tables (memcat < 2) use power-of-2 sizing, no cap
+-- System tables (memcat < 10) use power-of-2 sizing, no cap
 change_memcat(0)
 t = make_array(600)
 check_sizes(t, 1024, 0, "system table memcat 0")
-change_memcat(2)
+change_memcat(10)
 
 -- table.shrink tests
 

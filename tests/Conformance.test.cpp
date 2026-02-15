@@ -1156,12 +1156,15 @@ TEST_CASE("ServerLua memory limits")
     eris_register_perms(GL, true);
     eris_register_perms(GL, false);
 
-    // Spawn a new thread to load our script into
+    // Spawn a new thread with user memcat (sandbox tables are user globals)
+    lua_setmemcat(GL, LUA_FIRST_USER_MEMCAT);
     lua_State* L = lua_newthread(GL);
+    lua_setmemcat(GL, 0);
     luaL_sandboxthread(L);
 
     size_t bytecodeSize = 0;
     char* bytecode = luau_compile(source.data(), source.size(), nullptr, &bytecodeSize);
+    lua_setmemcat(L, 0);
     int result = luau_load(L, "=forkserver", bytecode, bytecodeSize, 0);
     free(bytecode);
 
@@ -1172,6 +1175,7 @@ TEST_CASE("ServerLua memory limits")
         Luau::CodeGen::compile(L, -1, Luau::CodeGen::CodeGen_ColdFunctions);
     }
 
+    lua_setmemcat(L, LUA_FIRST_USER_MEMCAT);
     lua_State* Lforker = eris_make_forkserver(L);
 
     // Collect free objects from the loaded bytecode
@@ -1206,8 +1210,7 @@ TEST_CASE("ServerLua memory limits")
 
     for (int i = 0; i < 4; ++i)
     {
-        const uint8_t USER_MEMCAT = 2;
-        lua_State* Lchild = eris_fork_thread(Lforker, true, USER_MEMCAT);
+        lua_State* Lchild = eris_fork_thread(Lforker, true, LUA_FIRST_USER_MEMCAT);
         int status = lua_resume(Lchild, nullptr, 0);
         REQUIRE(status == 0);
 

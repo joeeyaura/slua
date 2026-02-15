@@ -556,7 +556,7 @@ static void rehash(lua_State* L, LuaTable* t, const TValue* ek)
 
     // ServerLua: Don't try to be conservative about array allocation size,
     //  this is a system table.
-    if (t->memcat < 2)
+    if (t->memcat < LUA_FIRST_USER_MEMCAT)
     {
         max_idx = -1;
     }

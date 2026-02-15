@@ -126,7 +126,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* Data, size_t Size)
     approxMemoryUsage = 0;
 
     // Make sure our thread is created in a user memcat
-    lua_setmemcat(GL, 2);
+    lua_setmemcat(GL, LUA_FIRST_USER_MEMCAT);
     lua_State* L = lua_newthread(GL);
     lua_setmemcat(GL, 0);
 

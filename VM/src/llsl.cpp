@@ -1139,7 +1139,7 @@ static int push_uuid_common(lua_State *L, const char *str, size_t len, bool comp
         // the script's reference graph before
         auto *uuid_tval = luaA_toobject(L, -1);
         auto *g = L->global;
-        if (LUAU_LIKELY(!!g->cb.beforeallocate) && L->activememcat > 1 && gcvalue(uuid_tval)->gch.memcat > 1)
+        if (LUAU_LIKELY(!!g->cb.beforeallocate) && L->activememcat >= LUA_FIRST_USER_MEMCAT && gcvalue(uuid_tval)->gch.memcat >= LUA_FIRST_USER_MEMCAT)
         {
             // See `lgctraverse.cpp` for reasoning behind this
             const size_t uuid_size = 4;

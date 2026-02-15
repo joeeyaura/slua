@@ -659,7 +659,7 @@ static bool runFile(const char* name, lua_State* GL, bool repl)
         return false;
     }
 
-    lua_setmemcat(GL, 2);
+    lua_setmemcat(GL, LUA_FIRST_USER_MEMCAT);
 
     // module needs to run in a new thread, isolated from the rest
     lua_State* L = lua_newthread(GL);
@@ -706,7 +706,7 @@ static bool runFile(const char* name, lua_State* GL, bool repl)
     lua_setmemcat(L, 0);
     if (luau_load(L, chunkname.c_str(), bytecode.data(), bytecode.size(), 0) == 0)
     {
-        lua_setmemcat(L, 2);
+        lua_setmemcat(L, LUA_FIRST_USER_MEMCAT);
         if (codegen)
         {
             Luau::CodeGen::CompilationOptions nativeOptions;

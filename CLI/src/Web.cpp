@@ -119,7 +119,7 @@ static std::string runCode(lua_State* L, const std::string& source)
         return error;
     }
 
-    lua_setmemcat(L, 2);
+    lua_setmemcat(L, LUA_FIRST_USER_MEMCAT);
     lua_State* T = lua_newthread(L);
     lua_setmemcat(L, 0);
 

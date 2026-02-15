@@ -344,7 +344,7 @@ static int dangerouslyexecuterequiredmodule(lua_State* L)
         luaL_error(L, "function with upvalues not allowed");
     // We don't currently have any system-defined Lua closures,
     // but we might at some point.
-    if (cl->memcat < 2)
+    if (cl->memcat < LUA_FIRST_USER_MEMCAT)
         luaL_error(L, "can't wrap a system lua closure");
 
     // Intentionally creating this on the main thread so that we

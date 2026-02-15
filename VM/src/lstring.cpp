@@ -131,7 +131,7 @@ static TString* findstring(lua_State * L, const char *data, unsigned int len, un
             // pretend as if we did an allocation. This makes sure reported memory usage
             // doesn't change due to other resident scripts in the same VM.
             // Check if this string was created, it would have been created in a user memcat
-            if (LUAU_LIKELY(!!g->cb.beforeallocate) && L->activememcat > 1 && el->memcat > 1)
+            if (LUAU_LIKELY(!!g->cb.beforeallocate) && L->activememcat >= LUA_FIRST_USER_MEMCAT && el->memcat >= LUA_FIRST_USER_MEMCAT)
             {
                 // See `lgctraverse.cpp` for reasoning behind this
                 const size_t str_size = 16 + el->len;
